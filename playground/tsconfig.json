@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "customConditions": ["dev"]
+  },
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.web.json" }
+  ],
+  "files": []
+}

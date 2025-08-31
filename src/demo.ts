@@ -1,0 +1,45 @@
+import { Type } from '@sinclair/typebox'
+import { createAllWindowsSender, defineHandler, defineSender, registerHandlers } from './main'
+
+const handler1 = defineHandler('handler1', {
+  greet(event, data) {
+    return `Hello, ${data.name}!`
+  },
+}, {
+  greet: {
+    data: Type.Object({ name: Type.String() }),
+    return: Type.String(),
+  },
+})
+
+const handler2 = defineHandler('handler2', {
+  ping(_event) {
+    return 'pong'
+  },
+}, {
+  ping: {
+    data: Type.Undefined(),
+    return: Type.String(),
+  },
+})
+
+const handler3 = defineHandler('handler6', {
+  multiply(event, data: { x: number, y: number }) {
+    return data.x * data.y
+  },
+})
+
+registerHandlers(
+  handler1,
+  handler2,
+)
+  .add(handler3)
+  .static
+  .handler6
+  .multiply({ x: 1, y: 2 })
+
+const createTestSender = defineSender('sender1', {
+  hello: Type.String(),
+})
+
+createAllWindowsSender(createTestSender).hello('world')
