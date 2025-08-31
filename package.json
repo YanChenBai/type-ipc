@@ -1,0 +1,89 @@
+{
+  "name": "type-ipc",
+  "type": "module",
+  "version": "0.0.1",
+  "packageManager": "pnpm@10.14.0",
+  "description": "A starter for creating a TypeScript package.",
+  "author": "YanChenBai <author.name@mail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/YanChenBai/type-ipc#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YanChenBai/type-ipc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YanChenBai/library/issues"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "dev": "./src/index.ts"
+    },
+    "./package.json": {
+      "import": "./package.json"
+    },
+    "./main": {
+      "import": "./dist/main.js",
+      "dev": "./src/main"
+    },
+    "./renderer": {
+      "import": "./dist/renderer.js",
+      "dev": "./src/renderer.ts"
+    },
+    "./preload": {
+      "import": "./dist/preload.js",
+      "dev": "./src/preload.ts"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/index.d.ts"
+      ],
+      "main": [
+        "./dist/main.d.ts"
+      ],
+      "preload": [
+        "./dist/preload.d.ts"
+      ],
+      "renderer": [
+        "./dist/renderer.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "release": "bumpp && npm publish",
+    "lint": "eslint .",
+    "lint:fix": "nr lint --fix",
+    "play": "pnpm --filter ./playground dev"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^5.2.0",
+    "@antfu/ni": "^25.0.0",
+    "@sinclair/typebox": "^0.34.38",
+    "@types/node": "^22.15.17",
+    "bumpp": "^10.1.0",
+    "electron": "^37.4.0",
+    "eslint": "^9.33.0",
+    "jsdom": "^26.1.0",
+    "simple-git-hooks": "^2.13.1",
+    "tsdown": "^0.11.9",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "nr lint:fix",
+    "pre-push": "nr lint"
+  }
+}
