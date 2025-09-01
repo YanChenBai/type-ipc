@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ipcInvokes } from '@renderer/utils/ipc'
+import { ipcInvoke } from '@renderer/utils/ipc'
 import { reactive } from 'vue'
 
 const versions = reactive({
@@ -8,7 +8,7 @@ const versions = reactive({
   node: '',
 })
 
-ipcInvokes.test.getVersions().then((res) => {
+ipcInvoke.test.getVersions().then((res) => {
   if (res.error)
     return
 

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import Versions from './components/Versions.vue'
-import { ipcInvokes, ipcMessages } from './utils/ipc'
+import { ipcInvoke, ipcMessage } from './utils/ipc'
 
-const { test } = ipcInvokes
+const { test } = ipcInvoke
 
-ipcMessages.test.onUpdate(async (data) => {
+ipcMessage.test.onUpdate(async (data) => {
   // eslint-disable-next-line no-console
   console.log('ping', data)
 })

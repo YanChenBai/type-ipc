@@ -1,8 +1,8 @@
 import type { Static, TSchema } from '@sinclair/typebox'
-import type { UnionToIntersection } from '../common'
+import type { UnionToIntersection, WebContentsSendData } from '../common'
 import { Value } from '@sinclair/typebox/value'
 import { BrowserWindow } from 'electron'
-import { EMPTY_OBJECT, formatSenderName } from '../common'
+import { EMPTY_OBJECT, TYPE_IPC_SENDER_NAME } from '../common'
 
 export type SenderSchemaRecord = Record<string, TSchema>
 
@@ -29,9 +29,9 @@ export interface DefineSenderReturn {
  * @description If schema is undefined or options.validate is false, sender will not validate data
  * @example
  *
- * const { createSender } = defineSender('SenderName', { hello: Type.String() })
+ * const createSender = defineSender('SenderName', { hello: Type.String() })
  * // or
- * const { createSender } = defineSender('SenderName', {} as { hello: string  })
+ * const createSender = defineSender('SenderName', {} as { hello: string  })
  *
  * // send data to renderer
  * const sender = createSender(window)
@@ -63,10 +63,13 @@ export function defineSender<
           // Only validate if schema exists and options.validate is true
           const parsedData = validate && hasSchema ? Value.Parse(schema[method], data) : data
 
-          window.webContents.send(
-            formatSenderName(name, method),
-            parsedData,
-          )
+          const payload = {
+            name,
+            method,
+            data: parsedData,
+          } satisfies WebContentsSendData
+
+          window.webContents.send(TYPE_IPC_SENDER_NAME, payload)
         }
       },
     }) as Sender
@@ -84,7 +87,7 @@ export function defineSender<
      */
     static: {
       [N in Name]: {
-        [K in keyof Sender as `on${string & K}`]: (callback: Sender[K]) => () => void
+        [K in keyof Sender as `on${string & K}` | `once${string & K}`]: (callback: Sender[K]) => () => void
       }
     }
   }

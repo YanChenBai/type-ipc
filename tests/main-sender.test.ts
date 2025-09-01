@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
-import { formatSenderName } from '../src/common'
+import { TYPE_IPC_SENDER_NAME } from '../src/common'
 import { defineSender } from '../src/main/sender'
 
 describe('defineSender', () => {
@@ -13,8 +13,12 @@ describe('defineSender', () => {
 
     expect(mockWindow.webContents.send)
       .toHaveBeenCalledWith(
-        formatSenderName('TestSender', 'hello'),
-        'world',
+        TYPE_IPC_SENDER_NAME,
+        {
+          name: 'TestSender',
+          method: 'hello',
+          data: 'world',
+        },
       )
   })
 
@@ -36,8 +40,12 @@ describe('defineSender', () => {
     sender.hello('world')
 
     expect(mockWindow.webContents.send).toHaveBeenCalledWith(
-      formatSenderName('TestSender', 'hello'),
-      'world',
+      TYPE_IPC_SENDER_NAME,
+      {
+        name: 'TestSender',
+        method: 'hello',
+        data: 'world',
+      },
     )
   })
 

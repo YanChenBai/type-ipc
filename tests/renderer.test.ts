@@ -2,28 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TYPE_IPC_EXPOSE_NAME } from '../src/common'
 import { createIpcInvoke, createIpcMessage, createProxy } from '../src/renderer'
 
-// Mock electron before importing any code that uses it
-vi.mock('electron', () => {
-  return {
-    app: {
-      whenReady: vi.fn().mockResolvedValue(undefined),
-    },
-    BrowserWindow: vi.fn().mockImplementation(() => ({
-      id: 1,
-      webContents: { send: vi.fn() },
-    })),
-    ipcMain: {
-      handle: vi.fn(),
-      on: vi.fn(),
-    },
-    ipcRenderer: {
-      invoke: vi.fn(),
-      send: vi.fn(),
-      on: vi.fn(),
-    },
-  }
-})
-
 describe('createProxy', () => {
   it('should call get function with correct arguments', () => {
     const mockGet = vi.fn()

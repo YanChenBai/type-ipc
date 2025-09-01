@@ -1,7 +1,7 @@
 {
   "name": "type-ipc",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "packageManager": "pnpm@10.14.0",
   "description": "A starter for creating a TypeScript package.",
   "author": "YanChenBai <author.name@mail.com>",
@@ -67,6 +67,9 @@
     "lint": "eslint .",
     "lint:fix": "nr lint --fix",
     "play": "pnpm --filter ./playground dev"
+  },
+  "dependencies": {
+    "pika-events": "^0.0.1"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^5.2.0",
