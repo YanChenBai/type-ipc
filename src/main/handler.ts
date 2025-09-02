@@ -1,4 +1,5 @@
-import type { Static, TSchema } from '@sinclair/typebox'
+import type { Awaited, Static, TSchema } from '@sinclair/typebox'
+
 import type { IpcMainInvokeEvent } from 'electron'
 import type { HandlerCallbackEvent, UnionToIntersection } from '../common'
 import { Value } from '@sinclair/typebox/value'
@@ -14,12 +15,6 @@ export interface HandleListenerEvent {
   invokeEvent: IpcMainInvokeEvent
   window: BrowserWindow | null
 }
-
-export type UnwrapPromise<T> = T extends Promise<infer U>
-  ? U extends Promise<any>
-    ? UnwrapPromise<U> // recursively unwrap nested Promises
-    : U
-  : T
 
 export type HandlerMethod<S extends HandlerSchema>
   = Static<S['data']> extends undefined
@@ -124,11 +119,11 @@ export function defineHandler<
         [K in keyof Methods]: Methods[K] extends (...args: any[]) => any
           ? Parameters<Methods[K]>[1] extends undefined
             ? (data?: Parameters<Methods[K]>[1]) => Promise<
-              | { error: null, data: UnwrapPromise<ReturnType<Methods[K]>> }
+              | { error: null, data: Awaited<ReturnType<Methods[K]>> }
               | { error: Error, data: null }
         >
             : (data: Parameters<Methods[K]>[1]) => Promise<
-              | { error: null, data: UnwrapPromise<ReturnType<Methods[K]>> }
+              | { error: null, data: Awaited<ReturnType<Methods[K]>> }
               | { error: Error, data: null }
         >
           : never
