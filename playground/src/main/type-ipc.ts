@@ -3,9 +3,9 @@ import process from 'node:process'
 import { defineHandler, defineSender, registerHandlers, registerSenders } from 'type-ipc/main'
 
 export const TestHandlers = defineHandler('test', {
-  ping: () => {
+  ping: (_event, data: string) => {
     // eslint-disable-next-line no-console
-    console.log('pong')
+    console.log(data)
   },
   getVersions() {
     const { electron, chrome, node } = process.versions

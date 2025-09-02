@@ -1,5 +1,5 @@
 import type { Static, TSchema } from '@sinclair/typebox'
-import type { UnionToIntersection, WebContentsSendData } from '../common'
+import type { WebContentsSendData } from '../common'
 import { Value } from '@sinclair/typebox/value'
 import { BrowserWindow } from 'electron'
 import { EMPTY_OBJECT, TYPE_IPC_SENDER_NAME } from '../common'
@@ -86,9 +86,7 @@ export function defineSender<
      * @internal
      */
     static: {
-      [N in Name]: {
-        [K in keyof Sender as `on${string & K}` | `once${string & K}`]: (callback: Sender[K]) => () => void
-      }
+      [K in keyof Sender as `on${string & K}` | `once${string & K}`]: (callback: Sender[K]) => () => void
     }
   }
 }
@@ -120,10 +118,12 @@ export function createAllWindowsSender<const Sender extends DefineSenderReturn>(
 export function registerSenders<const Senders extends DefineSenderReturn[]>(..._senders: Senders) {
   return EMPTY_OBJECT as {
     /** @internal */
-    static: UnionToIntersection<Senders[number]['static']>
+    static: { [K in Senders[number] as K['name']]: Readonly<K['static']> }
   }
 }
 
 export type {
-  UnionToIntersection,
+  Static,
+  TSchema,
+  WebContentsSendData,
 }

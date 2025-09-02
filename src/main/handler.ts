@@ -1,7 +1,6 @@
-import type { Awaited, Static, TSchema } from '@sinclair/typebox'
-
+import type { Static, TSchema } from '@sinclair/typebox'
 import type { IpcMainInvokeEvent } from 'electron'
-import type { HandlerCallbackEvent, UnionToIntersection } from '../common'
+import type { HandlerCallbackEvent } from '../common'
 import { Value } from '@sinclair/typebox/value'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { EMPTY_OBJECT, TYPE_IPC_HANDLER_NAME } from '../common'
@@ -32,24 +31,6 @@ export interface DefineHandlerReturn {
   __handler_name: string
   static: any
   (event: IpcMainInvokeEvent, invokeEvent: HandlerCallbackEvent): Promise<any>
-}
-
-export type DepthLimit<T, D extends readonly unknown[] = []> = D['length'] extends 3 ? never : T
-
-export interface MakeReturnWithDepth<T extends DefineHandlerReturn[], D extends readonly unknown[] = []> {
-  /** Add a handler to the handler list. */
-  add: <const A extends DefineHandlerReturn>(
-    handler: A
-  ) => DepthLimit<MakeReturnWithDepth<[...T, A], [...D, unknown]>, D>
-
-  /** Delete a handler */
-  del: <const A extends DefineHandlerReturn>(
-    handler: A
-  ) => void
-
-  start: () => void
-  appWhenReadyStart: () => Promise<void>
-  static: Readonly<UnionToIntersection<T[number]['static']>>
 }
 
 export interface DefineHandlerOptions {
@@ -115,19 +96,14 @@ export function defineHandler<
      * @internal
      */
     static: {
-      [N in Name]: {
-        [K in keyof Methods]: Methods[K] extends (...args: any[]) => any
-          ? Parameters<Methods[K]>[1] extends undefined
-            ? (data?: Parameters<Methods[K]>[1]) => Promise<
-              | { error: null, data: Awaited<ReturnType<Methods[K]>> }
-              | { error: Error, data: null }
-        >
-            : (data: Parameters<Methods[K]>[1]) => Promise<
-              | { error: null, data: Awaited<ReturnType<Methods[K]>> }
-              | { error: Error, data: null }
-        >
-          : never
-      }
+      [K in keyof Methods]: Methods[K] extends (...args: any[]) => any
+        ? (
+            ...data: (Parameters<Methods[K]>['length'] extends 2
+              ? Parameters<Methods[K]> extends [any, ...infer R]
+                ? R : never
+              : [])
+          ) => Promise<{ error: null, data: Awaited<ReturnType<Methods[K]>> } | { error: Error, data: null }>
+        : never
     }
   }
 }
@@ -171,50 +147,42 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
     })
   }
 
-  function makeReturn<const T extends DefineHandlerReturn[], D extends readonly unknown[] = []>(): MakeReturnWithDepth<T, D> {
-    const add = <const A extends DefineHandlerReturn>(handler: A) => {
+  const returnValue = {
+    /**
+     * Start TypeIpc
+     */
+    start,
+
+    /**
+     * Start when app ready
+     */
+    appWhenReadyStart,
+
+    /**
+     * Add a handler
+     */
+    add<const A extends DefineHandlerReturn>(handler: A) {
       handlersMap.set(handler.__handler_name, handler)
+      return returnValue as ReturnType<typeof registerHandlers<[...HandlerReturn, A]>>
+    },
 
-      return makeReturn<[...T, A], [...D, unknown]>()
-    }
-
-    const del = <const A extends DefineHandlerReturn>(handler: A) => {
+    /**
+     * Delete a handler
+     */
+    del  <const A extends DefineHandlerReturn>(handler: A) {
       handlersMap.delete(handler.__handler_name)
-    }
+    },
 
-    return {
-      /**
-       * Start TypeIpc
-       */
-      start,
-
-      /**
-       * Start when app ready
-       */
-      appWhenReadyStart,
-
-      /**
-       * Add a handler
-       */
-      add,
-
-      /**
-       * Delete a handler
-       */
-      del,
-
-      /**
-       * Generate static call signatures for the renderer side
-       * @internal
-       */
-      static: EMPTY_OBJECT as Readonly<UnionToIntersection<T[number]['static']>>,
-    } as MakeReturnWithDepth<T, D>
+    /**
+     * Generate static call signatures for the renderer side
+     * @internal
+     */
+    static: EMPTY_OBJECT as { [K in HandlerReturn[number] as K['__handler_name']]: Readonly<K['static']> },
   }
 
-  return makeReturn<HandlerReturn>()
+  return returnValue
 }
 
 export type {
   HandlerCallbackEvent,
-  UnionToIntersection,
 }

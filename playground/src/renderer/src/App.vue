@@ -29,7 +29,7 @@ ipcMessage.test.onUpdate(async (data) => {
       <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">Documentation</a>
     </div>
     <div class="action">
-      <a target="_blank" rel="noreferrer" @click="test.ping()">Send IPC</a>
+      <a target="_blank" rel="noreferrer" @click="test.ping('123132')">Send IPC</a>
     </div>
   </div>
   <Versions />

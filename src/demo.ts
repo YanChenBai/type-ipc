@@ -23,19 +23,17 @@ const handler2 = defineHandler('handler2', {
   },
 })
 
-const handler3 = defineHandler('handler6', {
+const handler3 = defineHandler('handler3', {
   multiply(event, data: { x: number, y: number }) {
     return data.x * data.y
   },
 })
 
-registerHandlers(
-  handler1,
-  handler2,
-)
+registerHandlers(handler1)
   .add(handler3)
+  .add(handler2)
   .static
-  .handler6
+  .handler3
   .multiply({ x: 1, y: 2 })
 
 const createTestSender = defineSender('sender1', {
