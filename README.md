@@ -186,7 +186,7 @@ globalSender.updateData('Hello from main process!')
 定义一个发送器工厂函数，用于向渲染进程发送消息。
 
 参数：
-- `name`: 发送器名称
+- `__sender_name`: 发送器名称
 - `schema`: （可选）TypeBox schema 对象或 TypeScript 类型，定义可发送的消息类型
 - `options`: （可选）配置选项
   - `validate`: 是否启用数据验证（默认 false）

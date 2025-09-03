@@ -19,7 +19,7 @@ export interface DefineSenderOptions {
 }
 
 export interface DefineSenderReturn {
-  name: string
+  __sender_name: string
   static: any
   (window: BrowserWindow): any
 }
@@ -80,7 +80,7 @@ export function defineSender<
 
   return createSender as {
     (window: BrowserWindow): Sender
-    name: Name
+    __sender_name: Name
     /**
      * Generate static call signatures for the renderer side
      * @internal
@@ -118,7 +118,7 @@ export function createAllWindowsSender<const Sender extends DefineSenderReturn>(
 export function registerSenders<const Senders extends DefineSenderReturn[]>(..._senders: Senders) {
   return EMPTY_OBJECT as {
     /** @internal */
-    static: { [K in Senders[number] as K['name']]: Readonly<K['static']> }
+    static: { [K in Senders[number] as K['__sender_name']]: Readonly<K['static']> }
   }
 }
 
