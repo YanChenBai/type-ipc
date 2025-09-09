@@ -2,7 +2,7 @@ import type { Static, TSchema } from '@sinclair/typebox'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { HandlerCallbackEvent } from '../common'
 import { Value } from '@sinclair/typebox/value'
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BaseWindow, BrowserWindow, ipcMain } from 'electron'
 import { EMPTY_OBJECT, TYPE_IPC_HANDLER_NAME } from '../common'
 
 export interface HandlerSchema {
@@ -12,7 +12,6 @@ export interface HandlerSchema {
 
 export interface HandleListenerEvent {
   invokeEvent: IpcMainInvokeEvent
-  window: BrowserWindow | null
 }
 
 export type HandlerMethod<S extends HandlerSchema>
@@ -74,7 +73,6 @@ export function defineHandler<
 
     const handlerEvent = {
       invokeEvent: event,
-      window: BrowserWindow.fromId(event.sender.id),
     }
 
     return await Promise.resolve(handler(
@@ -181,6 +179,34 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
   }
 
   return returnValue
+}
+
+/**
+ * Get BrowserWindow instance from event sender
+ * @param event IpcMainInvokeEvent
+ * @returns BrowserWindow instance or null
+ */
+export function getBrowserWindow(event: HandleListenerEvent): BrowserWindow | null {
+  try {
+    return BrowserWindow.fromId(event.invokeEvent.sender.id)
+  }
+  catch {
+    return null
+  }
+}
+
+/**
+ * Get BaseWindow instance from event sender
+ * @param event IpcMainInvokeEvent
+ * @returns BaseWindow instance or null
+ */
+export function getBaseWindow(event: HandleListenerEvent): BaseWindow | null {
+  try {
+    return BaseWindow.fromId(event.invokeEvent.sender.id)
+  }
+  catch {
+    return null
+  }
 }
 
 export type {
