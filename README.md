@@ -28,6 +28,7 @@ bun add type-ipc
 ## 🔨 使用示例
 
 TypeIpc 提供了两种主要的通信模式：
+
 1. **Handler / Invoke 模式** - 从渲染进程调用主进程函数并获取返回值
 2. **Sender / Message 模式** - 从主进程向渲染进程发送消息
 
@@ -150,12 +151,12 @@ ipcMessage.test.onceUpdateData((data) => {
 ```typescript
 // 在主进程中
 import { BrowserWindow } from 'electron'
-import { createAllWindowsSender } from 'type-ipc/main'
+import { broadcastToWebContents } from 'type-ipc/main'
 
 // 创建发送器实例
-const sender = createTestSender(someBrowserWindow)
+const sender = createTestSender(someBrowserWindow.webContents)
 // 或者创建全局发送器（发送给所有窗口）
-const globalSender = createAllWindowsSender(createTestSender)
+const globalSender = broadcastToWebContents(createTestSender)
 
 // 发送消息
 sender.updateData('Hello from main process!')
@@ -170,6 +171,7 @@ globalSender.updateData('Hello from main process!')
 定义一个处理器，用于处理从渲染进程发来的请求。
 
 参数：
+
 - `name`: 处理器名称
 - `methods`: 方法对象，键为方法名，值为处理函数
 - `schema`: （可选）TypeBox schema 对象，用于参数验证
@@ -177,6 +179,7 @@ globalSender.updateData('Hello from main process!')
   - `validate`: 是否启用参数验证（默认 false）
 
 返回值：一个具有以下属性的函数：
+
 - 函数本身：用于处理 IPC 调用的函数
 - `__handler_name`: 处理器名称（内部使用）
 - `static`: 类型定义，用于渲染进程的类型推断
@@ -186,17 +189,20 @@ globalSender.updateData('Hello from main process!')
 定义一个发送器工厂函数，用于向渲染进程发送消息。
 
 参数：
+
 - `__sender_name`: 发送器名称
 - `schema`: （可选）TypeBox schema 对象或 TypeScript 类型，定义可发送的消息类型
 - `options`: （可选）配置选项
   - `validate`: 是否启用数据验证（默认 false）
 
 返回值：一个具有以下属性的函数：
+
 - 函数本身：接收一个 BrowserWindow 对象，返回一个发送器实例，该实例包含 schema 中定义的所有方法
 - `name`: 发送器名称
 - `static`: 类型定义，用于渲染进程的类型推断，会自动生成 `on` 和 `once` 前缀的监听方法
 
 示例：
+
 ```typescript
 const createTestSender = defineSender('test', {
   updateUser: Type.String(),
@@ -217,9 +223,11 @@ sender.updateConfig({ theme: 'dark', language: 'en' })
 注册一个或多个处理器。
 
 参数：
+
 - `handlers`: 要注册的处理器（由 defineHandler 创建）
 
 返回值：一个对象，包含以下属性和方法：
+
 - `start()`: 启动 IPC 监听，开始处理来自渲染进程的请求
 - `appWhenReadyStart()`: 在 Electron 应用准备就绪后启动 IPC 监听
 - `add(handler)`: 动态添加处理器
@@ -231,18 +239,22 @@ sender.updateConfig({ theme: 'dark', language: 'en' })
 注册一个或多个发送器。
 
 参数：
+
 - `senders`: 要注册的发送器（由 defineSender 创建）
 
 返回值：一个对象，包含以下属性：
+
 - `static`: 类型定义，用于渲染进程的类型推断，是所有发送器 static 类型的交集
 - `senders`: 当前注册的所有发送器
 
-### createAllWindowsSender(sender)
+### broadcastToWebContents(sender, webContentsList)
 
 创建一个可以向所有窗口发送消息的发送器。
 
 参数：
+
 - `sender`: 通过 defineSender 创建的发送器
+- `webContentsList`: 要发送消息的 webbContents 数组, 默认为所有 webbContents
 
 返回值：可以向所有窗口发送消息的发送器实例
 

@@ -1,5 +1,5 @@
 import { Type } from '@sinclair/typebox'
-import { createAllWindowsSender, defineHandler, defineSender, registerHandlers } from './main'
+import { broadcastToWebContents, defineHandler, defineSender, registerHandlers } from './main'
 
 const handler1 = defineHandler('handler1', {
   greet(event, data) {
@@ -40,4 +40,4 @@ const createTestSender = defineSender('sender1', {
   hello: Type.String(),
 })
 
-createAllWindowsSender(createTestSender).hello('world')
+broadcastToWebContents(createTestSender).hello('world')

@@ -1,7 +1,7 @@
 {
   "name": "type-ipc",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@10.14.0",
   "description": "A starter for creating a TypeScript package.",
   "author": "YanChenBai <author.name@mail.com>",
