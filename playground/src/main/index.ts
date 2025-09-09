@@ -37,7 +37,7 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  const senders = createTestSender(mainWindow)
+  const senders = createTestSender(mainWindow.webContents)
 
   setInterval(() => {
     senders.Update('update')

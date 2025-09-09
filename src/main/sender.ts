@@ -1,10 +1,14 @@
 import type { Static, TSchema } from '@sinclair/typebox'
 import type { WebContentsSendData } from '../common'
 import { Value } from '@sinclair/typebox/value'
-import { BrowserWindow } from 'electron'
+import { webContents } from 'electron'
 import { EMPTY_OBJECT, TYPE_IPC_SENDER_NAME } from '../common'
 
 export type SenderSchemaRecord = Record<string, TSchema>
+
+export interface LikeWebContents {
+  send: (channel: string, ...args: any[]) => void
+}
 
 export type CreateSenderReturn<S extends SenderSchemaRecord | undefined> = Readonly<{
   [K in keyof S]: (data: S[K] extends TSchema ? Static<S[K]> : S[K]) => void
@@ -21,7 +25,7 @@ export interface DefineSenderOptions {
 export interface DefineSenderReturn {
   __sender_name: string
   static: any
-  (window: BrowserWindow): any
+  (webContents: LikeWebContents): Record<string, (data: any) => void>
 }
 
 /**
@@ -34,7 +38,7 @@ export interface DefineSenderReturn {
  * const createSender = defineSender('SenderName', {} as { hello: string  })
  *
  * // send data to renderer
- * const sender = createSender(window)
+ * const sender = createSender(window.webContents)
  * sender.hello('world')
  */
 export function defineSender<
@@ -46,13 +50,13 @@ export function defineSender<
   schema?: Schema,
   options?: DefineSenderOptions,
 ) {
-  const senderMap = new WeakMap<BrowserWindow, any>()
+  const senderMap = new WeakMap<LikeWebContents, any>()
   const hasSchema = schema && Object.keys(schema).length > 0
   const { validate = false } = options ?? {}
 
-  const createSender = (window: BrowserWindow): Sender => {
-    if (senderMap.has(window))
-      return senderMap.get(window)!
+  const createSender = (webContents: LikeWebContents): Sender => {
+    if (senderMap.has(webContents))
+      return senderMap.get(webContents)!
 
     const methods = new Proxy(EMPTY_OBJECT, {
       get(_, method) {
@@ -69,17 +73,17 @@ export function defineSender<
             data: parsedData,
           } satisfies WebContentsSendData
 
-          window.webContents.send(TYPE_IPC_SENDER_NAME, payload)
+          webContents.send(TYPE_IPC_SENDER_NAME, payload)
         }
       },
     }) as Sender
 
-    senderMap.set(window, methods)
+    senderMap.set(webContents, methods)
     return methods
   }
 
   return createSender as {
-    (window: BrowserWindow): Sender
+    (webContents: LikeWebContents): Sender
     __sender_name: Name
     /**
      * Generate static call signatures for the renderer side
@@ -92,19 +96,23 @@ export function defineSender<
 }
 
 /**
- * Create sender for all windows
- * @param sender Created by `defineSender`
+ * Creates a message broadcaster that sends to specified or all webContents
+ * @param sender Sender instance created by `defineSender`
+ * @param webContentsList Optional array of target webContents (defaults to all)
  */
-export function createAllWindowsSender<const Sender extends DefineSenderReturn>(sender: Sender) {
-  const senders = BrowserWindow.getAllWindows().map(window => sender(window))
+export function broadcastToWebContents<const Sender extends DefineSenderReturn>(sender: Sender, webContentsList?: LikeWebContents[]) {
+  const senders = (webContentsList ?? webContents.getAllWebContents()).map(item => sender(item))
 
   return new Proxy(EMPTY_OBJECT, {
     get(_, method) {
+      if (typeof method !== 'string')
+        throw new Error('Method name must be a string')
+
       return (data: unknown) => {
-        senders.forEach((window) => {
-          const methods = sender(window)
-          if (typeof methods[method] === 'function')
-            methods[method](data)
+        senders.forEach((sender) => {
+          const func = sender[method]
+          if (typeof func === 'function')
+            func(data)
         })
       }
     },

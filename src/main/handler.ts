@@ -12,6 +12,8 @@ export interface HandlerSchema {
 
 export interface HandleListenerEvent {
   invokeEvent: IpcMainInvokeEvent
+  baseWindow: BaseWindow | null
+  browserWindow: BaseWindow | null
 }
 
 export type HandlerMethod<S extends HandlerSchema>
@@ -73,6 +75,12 @@ export function defineHandler<
 
     const handlerEvent = {
       invokeEvent: event,
+      get baseWindow() {
+        return BaseWindow.fromId(event.sender.id)
+      },
+      get browserWindow() {
+        return BrowserWindow.fromId(event.sender.id)
+      },
     }
 
     return await Promise.resolve(handler(
@@ -179,34 +187,6 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
   }
 
   return returnValue
-}
-
-/**
- * Get BrowserWindow instance from event sender
- * @param event IpcMainInvokeEvent
- * @returns BrowserWindow instance or null
- */
-export function getBrowserWindow(event: HandleListenerEvent): BrowserWindow | null {
-  try {
-    return BrowserWindow.fromId(event.invokeEvent.sender.id)
-  }
-  catch {
-    return null
-  }
-}
-
-/**
- * Get BaseWindow instance from event sender
- * @param event IpcMainInvokeEvent
- * @returns BaseWindow instance or null
- */
-export function getBaseWindow(event: HandleListenerEvent): BaseWindow | null {
-  try {
-    return BaseWindow.fromId(event.invokeEvent.sender.id)
-  }
-  catch {
-    return null
-  }
 }
 
 export type {
