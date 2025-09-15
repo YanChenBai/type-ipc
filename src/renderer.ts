@@ -1,10 +1,14 @@
 import type { HandlerCallbackEvent, Infer, SenderCallbackEvent } from './common'
 import { EMPTY_OBJECT, TYPE_IPC_EXPOSE_NAME } from './common'
 
+type InvokeReturn<Data = unknown>
+  = | { error: Error, data: null }
+    | { error: null, data: Data }
+
 declare global {
   interface Window {
     [TYPE_IPC_EXPOSE_NAME]: {
-      invoke: (data: HandlerCallbackEvent) => Promise<any>
+      invoke: (data: HandlerCallbackEvent) => Promise<InvokeReturn>
       /**
        * @param data Event Data
        * @returns Remove listener
@@ -27,12 +31,39 @@ export function createProxy<T extends Record<string, Record<string, any>>>(get: 
 }
 
 let TypeIpcInvoke: any = null
-export function createIpcInvoke<Invoke extends Record<string, Record<string, (...args: any[]) => Promise<any>>>>(): Invoke {
+export function createIpcInvoke<
+  Invoke extends Record<string, Record<string, (...args: any[]) => Promise<InvokeReturn>>>,
+>(): Invoke {
   if (TypeIpcInvoke)
     return TypeIpcInvoke
 
   return TypeIpcInvoke = createProxy((name, method, data) => {
     return window[TYPE_IPC_EXPOSE_NAME].invoke({ name, method, data })
+  })
+}
+
+export function createThrowIpcInvoke<
+  Invoke extends Record<string, Record<string, (...args: any[]) => Promise<InvokeReturn>>>,
+  InvokeThrow = {
+    [NS in keyof Invoke]: {
+      [M in keyof Invoke[NS]]: (
+        ...args: Parameters<Invoke[NS][M]>
+      ) => Invoke[NS][M] extends (...args: any[]) => Promise<InvokeReturn<infer D>>
+        ? Promise<D>
+        : never
+    }
+  },
+>(): InvokeThrow {
+  if (TypeIpcInvoke)
+    return TypeIpcInvoke
+
+  return TypeIpcInvoke = createProxy(async (name, method, data) => {
+    const res = await window[TYPE_IPC_EXPOSE_NAME].invoke({ name, method, data })
+
+    if (res.error)
+      throw res.error
+
+    return res.data
   })
 }
 
