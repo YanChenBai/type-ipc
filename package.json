@@ -33,6 +33,10 @@
     "./preload": {
       "import": "./dist/preload.js",
       "dev": "./src/preload.ts"
+    },
+    "./typebox": {
+      "import": "./dist/typebox.js",
+      "dev": "./src/typebox.ts"
     }
   },
   "types": "./dist/index.d.ts",
@@ -49,6 +53,9 @@
       ],
       "renderer": [
         "./dist/renderer.d.ts"
+      ],
+      "typebox": [
+        "./dist/typebox.d.ts"
       ]
     }
   },
@@ -63,18 +70,23 @@
     "dev": "tsdown --watch",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "release": "bumpp && npm publish",
+    "release:prepare": "nr lint && nr typecheck && nr test run && nr build",
+    "release": "nr release:prepare && bumpp && npm publish",
     "lint": "eslint .",
     "lint:fix": "nr lint --fix",
     "play": "pnpm --filter ./playground dev"
   },
+  "peerDependencies": {
+    "electron": "^37.4.0"
+  },
   "dependencies": {
-    "pika-events": "^0.0.1"
+    "@standard-schema/spec": "^1.0.0",
+    "pika-events": "^0.0.1",
+    "typebox": "^1.0.20"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^5.2.0",
     "@antfu/ni": "^25.0.0",
-    "@sinclair/typebox": "^0.34.38",
     "@types/node": "^22.15.17",
     "bumpp": "^10.1.0",
     "electron": "^37.4.0",
@@ -84,6 +96,12 @@
     "tsdown": "^0.11.9",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   },
   "simple-git-hooks": {
     "pre-commit": "nr lint:fix",

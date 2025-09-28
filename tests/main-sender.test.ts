@@ -1,8 +1,8 @@
-import { Type } from '@sinclair/typebox'
 import { webContents } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { TYPE_IPC_SENDER_NAME } from '../src/common'
+import { TYPE_IPC_SENDER_NAME } from '../src/constants'
 import { broadcastToWebContents, defineSender } from '../src/main/sender'
+import { Type } from '../src/typebox'
 
 // Mock electron
 vi.mock('electron', () => {
@@ -45,12 +45,12 @@ describe('defineSender', () => {
     expect(sender1).toBe(sender2)
   })
 
-  it('should send data correctly when validate=true', () => {
+  it('should send data correctly when validate=true', async () => {
     const createSender = defineSender('TestSender', { hello: Type.String() }, { validate: true })
     const mockWindow = { webContents: { send: vi.fn() } } as any
     const sender = createSender(mockWindow.webContents)
 
-    sender.hello('world')
+    await sender.hello('world')
 
     expect(mockWindow.webContents.send).toHaveBeenCalledWith(
       TYPE_IPC_SENDER_NAME,
@@ -62,12 +62,12 @@ describe('defineSender', () => {
     )
   })
 
-  it('should throw error when data does not match schema', () => {
+  it('should throw error when data does not match schema', async () => {
     const createSender = defineSender('TestSender', { hello: Type.String() }, { validate: true })
     const mockWindow = { webContents: { send: vi.fn() } } as any
     const sender = createSender(mockWindow)
 
-    expect(() => sender.hello({} as any)).toThrow()
+    await expect(sender.hello({} as any)).rejects.toThrow()
     expect(mockWindow.webContents.send).not.toHaveBeenCalled()
   })
 })

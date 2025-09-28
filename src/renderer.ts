@@ -1,5 +1,5 @@
-import type { HandlerCallbackEvent, Infer, SenderCallbackEvent } from './common'
-import { EMPTY_OBJECT, TYPE_IPC_EXPOSE_NAME } from './common'
+import type { HandlerCallbackEvent, Infer, SenderCallbackEvent } from './types'
+import { EMPTY_OBJECT, TYPE_IPC_EXPOSE_NAME } from './constants'
 
 type InvokeReturn<Data = unknown>
   = | { error: Error, data: null }

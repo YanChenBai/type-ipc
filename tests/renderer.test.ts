@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { TYPE_IPC_EXPOSE_NAME } from '../src/common'
+import { TYPE_IPC_EXPOSE_NAME } from '../src/constants'
 import { createIpcInvoke, createIpcMessage, createProxy } from '../src/renderer'
 
 describe('createProxy', () => {
@@ -63,7 +63,7 @@ describe('createIpcInvoke & createIpcMessage', () => {
 
   it('createIpcInvoke should call window.invoke with correct args', async () => {
     const invokes = createIpcInvoke<{
-      user: { login: (data: { name: string }) => Promise<string> }
+      user: { login: (data: { name: string }) => Promise<{ data: string, error: null }> }
     }>()
 
     const result = await invokes.user.login({ name: 'alice' })
@@ -72,7 +72,9 @@ describe('createIpcInvoke & createIpcMessage', () => {
     expect(mockInvoke).toHaveBeenCalledWith({
       name: 'user',
       method: 'login',
-      data: { name: 'alice' },
+      data: {
+        name: 'alice',
+      },
     })
     expect(result).toBe('invoke-result')
   })

@@ -1,5 +1,5 @@
-import { Type } from '@sinclair/typebox'
 import { broadcastToWebContents, defineHandler, defineSender, registerHandlers } from './main'
+import { Type } from './typebox'
 
 const handler1 = defineHandler('handler1', {
   greet(event, data) {

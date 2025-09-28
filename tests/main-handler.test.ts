@@ -1,7 +1,8 @@
-import { Type } from '@sinclair/typebox'
+import type { HandleListenerEvent } from '../src/main'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { TYPE_IPC_HANDLER_NAME } from '../src/common'
+import { TYPE_IPC_HANDLER_NAME } from '../src/constants'
 import { defineHandler, registerHandlers } from '../src/main'
+import { Type } from '../src/typebox'
 
 // Mock electron
 vi.mock('electron', () => {
@@ -58,9 +59,9 @@ describe('defineHandler', () => {
       },
     }
 
-    const handlerFn = vi.fn((event, data: { a: number, b: number }) => data.a + data.b)
+    const handlerFn = vi.fn((event: HandleListenerEvent, data: { a: number, b: number }) => data.a + data.b)
 
-    const handlerCallback = defineHandler('math', { add: handlerFn }, schema, { validate: true })
+    const handlerCallback = defineHandler('math', { add: handlerFn as any }, schema, { validate: true })
 
     const mockEvent: any = { sender: { id: 1 } }
 

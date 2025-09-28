@@ -1,7 +1,7 @@
-import type { HandlerCallbackEvent, SenderCallbackEvent } from '../src/common'
+import type { HandlerCallbackEvent, SenderCallbackEvent } from '../src/types'
 import { contextBridge, ipcRenderer } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { TYPE_IPC_EXPOSE_NAME, TYPE_IPC_HANDLER_NAME } from '../src/common'
+import { TYPE_IPC_EXPOSE_NAME, TYPE_IPC_HANDLER_NAME } from '../src/constants'
 import { exposeTypeIpc } from '../src/preload'
 
 vi.mock('electron', () => ({

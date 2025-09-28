@@ -2,8 +2,6 @@ import { defineConfig } from 'tsdown'
 
 const externalModules = [
   'electron',
-  '@sinclair/typebox',
-  '@sinclair/typebox/value',
 ]
 
 export default defineConfig([
@@ -20,6 +18,7 @@ export default defineConfig([
   {
     entry: {
       main: './src/main/index.ts',
+      typebox: './src/typebox.ts',
     },
     platform: 'node',
     dts: true,

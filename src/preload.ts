@@ -1,8 +1,8 @@
 import type { IpcRendererEvent } from 'electron'
-import type { HandlerCallbackEvent, Infer, SenderCallbackEvent, WebContentsSendData } from './common'
+import type { HandlerCallbackEvent, Infer, SenderCallbackEvent, WebContentsSendData } from './types'
 import { contextBridge, ipcRenderer } from 'electron'
 import { createPikaEvents } from 'pika-events'
-import { TYPE_IPC_EXPOSE_NAME, TYPE_IPC_HANDLER_NAME, TYPE_IPC_SENDER_NAME } from './common'
+import { TYPE_IPC_EXPOSE_NAME, TYPE_IPC_HANDLER_NAME, TYPE_IPC_SENDER_NAME } from './constants'
 
 export function formatEventName(name: string, method: string) {
   return `${name}:${method}`

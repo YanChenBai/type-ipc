@@ -1,27 +1,26 @@
-import type { Static, TSchema } from '@sinclair/typebox'
 import type { IpcMainInvokeEvent } from 'electron'
-import type { HandlerCallbackEvent } from '../common'
-import { Value } from '@sinclair/typebox/value'
+import type { AnySchema, HandlerCallbackEvent, Static } from '../types'
 import { app, BaseWindow, BrowserWindow, ipcMain } from 'electron'
-import { EMPTY_OBJECT, TYPE_IPC_HANDLER_NAME } from '../common'
+import { EMPTY_OBJECT, TYPE_IPC_HANDLER_NAME } from '../constants'
+import { parser } from '../utils'
 
-export interface HandlerSchema {
-  data: TSchema
-  return: TSchema
+export interface MethodSchema {
+  data: AnySchema
+  return: AnySchema
 }
 
-export interface HandleListenerEvent {
+export interface HandlerListenerEvent {
   invokeEvent: IpcMainInvokeEvent
   baseWindow: BaseWindow | null
   browserWindow: BaseWindow | null
 }
 
-export type HandlerMethod<S extends HandlerSchema>
+export type HandlerMethod<S extends MethodSchema>
   = Static<S['data']> extends undefined
-    ? (event: HandleListenerEvent) => Static<S['return']>
-    : (event: HandleListenerEvent, data: Static<S['data']>) => Static<S['return']>
+    ? (event: HandlerListenerEvent) => Static<S['return']>
+    : (event: HandlerListenerEvent, data: Static<S['data']>) => Static<S['return']>
 
-export type HandlerFromSchema<S extends Record<string, HandlerSchema>> = {
+export type HandlerFromSchema<S extends Record<string, MethodSchema>> = {
   [K in keyof S]: HandlerMethod<S[K]>
 }
 
@@ -57,11 +56,11 @@ export interface DefineHandlerOptions {
  */
 export function defineHandler<
   const Name extends string,
-  const Methods extends Record<string, (event: HandleListenerEvent, args: any) => any>,
-  const Schema extends Record<string, HandlerSchema> | undefined = undefined,
+  const Schema extends Record<string, MethodSchema> | undefined = undefined,
+  const Methods extends Record<string, (event: HandlerListenerEvent, args: any) => any> = Record<string, (event: HandlerListenerEvent, args: any) => any>,
 >(
   name: Name,
-  methods: Schema extends Record<string, HandlerSchema> ? HandlerFromSchema<Schema> : Methods,
+  methods: Schema extends Record<string, MethodSchema> ? HandlerFromSchema<Schema> : Methods,
   schema?: Schema,
   options?: DefineHandlerOptions,
 ) {
@@ -86,7 +85,7 @@ export function defineHandler<
     return await Promise.resolve(handler(
       handlerEvent,
       schema && validate
-        ? Value.Parse(schema[method].data, data)
+        ? await parser(schema[method].data, data)
         : data,
     ))
   }

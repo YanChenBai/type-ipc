@@ -1,17 +1,16 @@
-import type { Static, TSchema } from '@sinclair/typebox'
-import type { WebContentsSendData } from '../common'
-import { Value } from '@sinclair/typebox/value'
+import type { AnySchema, Static, WebContentsSendData } from '../types'
 import { webContents } from 'electron'
-import { EMPTY_OBJECT, TYPE_IPC_SENDER_NAME } from '../common'
+import { EMPTY_OBJECT, TYPE_IPC_SENDER_NAME } from '../constants'
+import { parser } from '../utils'
 
-export type SenderSchemaRecord = Record<string, TSchema>
+export type SenderSchemaRecord = Record<string, AnySchema>
 
 export interface LikeWebContents {
   send: (channel: string, ...args: any[]) => void
 }
 
 export type CreateSenderReturn<S extends SenderSchemaRecord | undefined> = Readonly<{
-  [K in keyof S]: (data: S[K] extends TSchema ? Static<S[K]> : S[K]) => void
+  [K in keyof S]: (data: S[K] extends AnySchema ? Static<S[K]> : S[K]) => Promise<void>
 }>
 
 export interface DefineSenderOptions {
@@ -60,12 +59,12 @@ export function defineSender<
 
     const methods = new Proxy(EMPTY_OBJECT, {
       get(_, method) {
-        return (data: unknown) => {
+        return async (data: unknown) => {
           if (typeof method !== 'string')
             throw new Error('Method name must be a string')
 
           // Only validate if schema exists and options.validate is true
-          const parsedData = validate && hasSchema ? Value.Parse(schema[method], data) : data
+          const parsedData = validate && hasSchema ? await parser(schema[method], data) : data
 
           const payload = {
             name,
@@ -131,7 +130,7 @@ export function registerSenders<const Senders extends DefineSenderReturn[]>(..._
 }
 
 export type {
+  AnySchema,
   Static,
-  TSchema,
   WebContentsSendData,
 }
