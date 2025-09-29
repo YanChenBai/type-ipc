@@ -89,7 +89,9 @@ export function defineSender<
      * @internal
      */
     static: {
-      [K in keyof Sender as `on${string & K}` | `once${string & K}`]: (callback: Sender[K]) => () => void
+      [K in keyof Sender as `on${string & K}` | `once${string & K}`]: Sender[K] extends (...args: any[]) => any
+        ? (callback: (...args: Parameters<Sender[K]>) => Awaited<ReturnType<Sender[K]>>) => () => void
+        : never
     }
   }
 }
@@ -125,7 +127,9 @@ export function broadcastToWebContents<const Sender extends DefineSenderReturn>(
 export function registerSenders<const Senders extends DefineSenderReturn[]>(..._senders: Senders) {
   return EMPTY_OBJECT as {
     /** @internal */
-    static: { [K in Senders[number] as K['__sender_name']]: Readonly<K['static']> }
+    static: {
+      [K in Senders[number] as K['__sender_name']]: Readonly<K['static']>
+    }
   }
 }
 
