@@ -3,7 +3,7 @@ import process from 'node:process'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, shell } from 'electron'
 import icon from '../../resources/icon.png?asset'
-import { createTestSender, handlers } from './type-ipc'
+import { createTestEmitter, handlers } from './type-ipc'
 
 function createWindow(): void {
   // Create the browser window.
@@ -37,7 +37,7 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  const senders = createTestSender(mainWindow.webContents)
+  const senders = createTestEmitter(mainWindow.webContents)
 
   setInterval(() => {
     senders.Update('update')

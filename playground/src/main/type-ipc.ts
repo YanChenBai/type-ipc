@@ -1,8 +1,8 @@
 import type { Infer } from 'type-ipc/main'
 import process from 'node:process'
-import { defineHandler, defineSender, registerHandlers, registerSenders } from 'type-ipc/main'
+import { defineEmitter, defineHandler, registerEmitters, registerHandlers } from 'type-ipc/main'
 
-export const TestHandlers = defineHandler('test', {
+export const testHandler = defineHandler('test', {
   ping: (_event, data: string) => {
     // eslint-disable-next-line no-console
     console.log(data)
@@ -18,10 +18,10 @@ export const TestHandlers = defineHandler('test', {
   },
 })
 
-export const createTestSender = defineSender('test', {} as { Update: string })
+export const createTestEmitter = defineEmitter('test', {} as { Update: string })
 
-export const handlers = registerHandlers(TestHandlers)
-export const senders = registerSenders(createTestSender)
+export const handlers = registerHandlers(testHandler)
+export const emitters = registerEmitters(createTestEmitter)
 
 export type Invoke = Infer<typeof handlers>
-export type Message = Infer<typeof senders>
+export type Message = Infer<typeof emitters>
