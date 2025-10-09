@@ -71,7 +71,7 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
-    "release:prepare": "nr lint && nr typecheck && nr test run && nr build",
+    "release:prepare": "nr lint && nr typecheck && nr test && nr build",
     "release": "nr release:prepare && bumpp && npm publish",
     "lint": "eslint .",
     "lint:fix": "nr lint --fix",
