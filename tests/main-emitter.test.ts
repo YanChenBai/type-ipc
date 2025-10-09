@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TYPE_IPC_EMITTER_NAME } from '../src/constants'
-import { defineEmitter } from '../src/main/emitter'
+import { defineEmitter } from '../src/main'
 import { Type } from '../src/typebox'
 
 // Mock electron

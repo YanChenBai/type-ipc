@@ -65,7 +65,7 @@ export function defineEmitter<
       '~name': name,
       /** @internal */
       'static': null as unknown as {
-        [K in keyof EmitterSchema ]: TIpcSchemaType<EmitterSchema[K]>
+        readonly [K in keyof EmitterSchema ]: TIpcSchemaType<EmitterSchema[K]>
       },
     },
   )
