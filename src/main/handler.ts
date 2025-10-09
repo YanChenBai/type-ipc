@@ -1,12 +1,12 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import type { AnySchema, HandlerCallbackEvent, Static } from '../types'
+import type { HandlerCallbackEvent, TIpcSchema, TIpcSchemaType } from '../types'
 import { app, BaseWindow, BrowserWindow, ipcMain } from 'electron'
 import { EMPTY_OBJECT, TYPE_IPC_HANDLER_NAME } from '../constants'
 import { parser } from '../utils'
 
 export interface MethodSchema {
-  data: AnySchema
-  return: AnySchema
+  data: TIpcSchema
+  return: TIpcSchema
 }
 
 export interface HandlerListenerEvent {
@@ -16,9 +16,9 @@ export interface HandlerListenerEvent {
 }
 
 export type HandlerMethod<S extends MethodSchema>
-  = Static<S['data']> extends undefined
-    ? (event: HandlerListenerEvent) => Static<S['return']>
-    : (event: HandlerListenerEvent, data: Static<S['data']>) => Static<S['return']>
+  = TIpcSchemaType<S['data']> extends undefined
+    ? (event: HandlerListenerEvent) => TIpcSchemaType<S['return']>
+    : (event: HandlerListenerEvent, data: TIpcSchemaType<S['data']>) => TIpcSchemaType<S['return']>
 
 export type HandlerFromSchema<S extends Record<string, MethodSchema>> = {
   [K in keyof S]: HandlerMethod<S[K]>
@@ -28,8 +28,8 @@ export interface DefineHandlerReturn {
   /**
    * @internal
    */
-  __handler_name: string
-  static: any
+  '~name': string
+  'static': any
   (event: IpcMainInvokeEvent, invokeEvent: HandlerCallbackEvent): Promise<any>
 }
 
@@ -64,7 +64,7 @@ export function defineHandler<
   schema?: Schema,
   options?: DefineHandlerOptions,
 ) {
-  async function listener(event: IpcMainInvokeEvent, invokeEvent: HandlerCallbackEvent) {
+  async function listener(event: IpcMainInvokeEvent, invokeEvent: HandlerCallbackEvent): Promise<any> {
     const { method, data } = invokeEvent
     const { validate = false } = options ?? {}
     const handler = methods[method]
@@ -90,27 +90,26 @@ export function defineHandler<
     ))
   }
 
-  listener.__handler_name = name
-
-  return listener as {
-    __handler_name: Name
-    (event: IpcMainInvokeEvent, invokeEvent: HandlerCallbackEvent): Promise<any>
-
-    /**
-     * Generate static call signatures for the renderer side
-     * @internal
-     */
-    static: {
-      [K in keyof Methods]: Methods[K] extends (...args: any[]) => any
-        ? (
-            ...data: (Parameters<Methods[K]>['length'] extends 2
-              ? Parameters<Methods[K]> extends [any, ...infer R]
-                ? R : never
-              : [])
-          ) => Promise<{ error: null, data: Awaited<ReturnType<Methods[K]>> } | { error: Error, data: null }>
-        : never
-    }
-  }
+  return Object.assign(
+    listener,
+    {
+      '~name': name,
+      /**
+       * Generate static call signatures for the renderer side
+       * @internal
+       */
+      'static': EMPTY_OBJECT as unknown as {
+        [K in keyof Methods]: Methods[K] extends (...args: any[]) => any
+          ? (
+              ...data: (Parameters<Methods[K]>['length'] extends 2
+                ? Parameters<Methods[K]> extends [any, ...infer R]
+                  ? R : never
+                : [])
+            ) => Promise<{ error: null, data: Awaited<ReturnType<Methods[K]>> } | { error: Error, data: null }>
+          : never
+      },
+    },
+  )
 }
 
 /**
@@ -118,7 +117,7 @@ export function defineHandler<
  */
 export function registerHandlers<const HandlerReturn extends DefineHandlerReturn[]>(...args: HandlerReturn) {
   let isStart = false
-  const handlersMap = new Map(args.map(item => [item.__handler_name, item]))
+  const handlersMap = new Map(args.map(item => [item['~name'], item]))
 
   function start() {
     if (isStart)
@@ -128,13 +127,13 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
 
     ipcMain.handle(TYPE_IPC_HANDLER_NAME, async (event, data: HandlerCallbackEvent) => {
       try {
-        const listener = handlersMap.get(data.name)
-        if (!listener)
+        const func = handlersMap.get(data.name)
+        if (!func)
           throw new Error(`Handler ${data.name} not found`)
 
         return {
           error: null,
-          data: await listener(event, data),
+          data: await func(event, data),
         }
       }
       catch (error) {
@@ -167,7 +166,7 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
      * Add a handler
      */
     add<const A extends DefineHandlerReturn>(handler: A) {
-      handlersMap.set(handler.__handler_name, handler)
+      handlersMap.set(handler['~name'], handler)
       return returnValue as ReturnType<typeof registerHandlers<[...HandlerReturn, A]>>
     },
 
@@ -175,14 +174,14 @@ export function registerHandlers<const HandlerReturn extends DefineHandlerReturn
      * Delete a handler
      */
     del  <const A extends DefineHandlerReturn>(handler: A) {
-      handlersMap.delete(handler.__handler_name)
+      handlersMap.delete(handler['~name'])
     },
 
     /**
      * Generate static call signatures for the renderer side
      * @internal
      */
-    static: EMPTY_OBJECT as { [K in HandlerReturn[number] as K['__handler_name']]: Readonly<K['static']> },
+    static: EMPTY_OBJECT as { [K in HandlerReturn[number] as K['~name']]: Readonly<K['static']> },
   }
 
   return returnValue

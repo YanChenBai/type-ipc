@@ -1,4 +1,4 @@
-import type { HandleListenerEvent } from '../src/main'
+import type { HandlerListenerEvent } from '../src/main'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TYPE_IPC_HANDLER_NAME } from '../src/constants'
 import { defineHandler, registerHandlers } from '../src/main'
@@ -59,7 +59,7 @@ describe('defineHandler', () => {
       },
     }
 
-    const handlerFn = vi.fn((event: HandleListenerEvent, data: { a: number, b: number }) => data.a + data.b)
+    const handlerFn = vi.fn((event: HandlerListenerEvent, data: { a: number, b: number }) => data.a + data.b)
 
     const handlerCallback = defineHandler('math', { add: handlerFn as any }, schema, { validate: true })
 

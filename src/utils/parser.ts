@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import type { AnySchema } from '../types'
+import type { TIpcSchema } from '../types'
 import { Compile } from '../typebox'
 
 export async function standardValidate<T extends StandardSchemaV1>(
@@ -18,7 +18,7 @@ export async function standardValidate<T extends StandardSchemaV1>(
   return result.value
 }
 
-export async function parser<const T extends AnySchema>(schema: T, data: any) {
+export async function parser<const T extends TIpcSchema>(schema: T, data: any) {
   if ('~standard' in schema) {
     return await standardValidate(schema, data)
   }

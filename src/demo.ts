@@ -1,4 +1,4 @@
-import { broadcastToWebContents, defineHandler, defineSender, registerHandlers } from './main'
+import { defineEmitter, defineHandler, registerEmitters, registerHandlers } from './main'
 import { Type } from './typebox'
 
 const handler1 = defineHandler('handler1', {
@@ -36,8 +36,12 @@ registerHandlers(handler1)
   .handler3
   .multiply({ x: 1, y: 2 })
 
-const createTestSender = defineSender('sender1', {
-  hello: Type.String(),
+const createTestEmitter = defineEmitter('emitter1', {
+  Hello: Type.String(),
 })
 
-broadcastToWebContents(createTestSender).hello('world')
+const createTest2Emitter = defineEmitter('emitter2', {
+  Ok: Type.String(),
+})
+
+export const emitters = registerEmitters(createTestEmitter, createTest2Emitter).static.emitter1
