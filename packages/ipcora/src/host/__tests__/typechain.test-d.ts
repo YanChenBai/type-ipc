@@ -1,3 +1,10 @@
+import { assertType, describe, expectTypeOf, test } from 'vitest';
+
+import { ipcora } from '../..';
+import type { BuiltInErrorPayload, Ipcora, IpcResult, RouteHandler, StandardSchemaV1 } from '../..';
+import type { Client, InvokeClient } from '../../client';
+import { defineEvents } from '../../event';
+
 /**
  * Type-chain regression tests.
  *
@@ -8,31 +15,24 @@
  * At runtime the `expectTypeOf` / `assertType` assertions are no-ops —
  * the actual checks happen during `vitest typecheck` / `vp check`.
  */
-import { assertType, describe, expectTypeOf, test } from 'vitest';
 
-import { createIpcora } from '../src';
-import type {
-  BuiltInErrorPayload,
-  Ipcora,
-  IpcResult,
-  RouteHandler,
-  StandardSchemaV1,
-} from '../src';
-import type { Client, InvokeClient } from '../src/client';
-import { defineEventSchema } from '../src/event';
-
-// Helpers ----------------------------------------------------------------
-/** Create a minimal StandardSchemaV1-shaped object for type inference. */
-function schema<TOutput>(
-  _validate?: (value: unknown) => { value: TOutput } | { issues: readonly { message: string }[] },
-): StandardSchemaV1<unknown, TOutput> {
+/**
+ * Create a minimal StandardSchemaV1-shaped object for type inference.
+ */
+function schema<TResponse>(
+  _validate?: (value: unknown) => { value: TResponse } | { issues: readonly { message: string }[] },
+): StandardSchemaV1<unknown, TResponse> {
   return {
     '~standard': {
       version: 1,
       vendor: 'test',
-      validate: _validate ?? (() => ({ value: {} as TOutput })),
+      validate: _validate ?? (() => ({ value: {} as TResponse })),
     },
-  } as StandardSchemaV1<unknown, TOutput>;
+  } as StandardSchemaV1<unknown, TResponse>;
+}
+
+function schemaIO<TInput, TResponse>(): StandardSchemaV1<TInput, TResponse> {
+  return schema<TResponse>() as StandardSchemaV1<TInput, TResponse>;
 }
 
 // ===================================================================
@@ -40,8 +40,8 @@ function schema<TOutput>(
 // ===================================================================
 describe('Schema → Handler → RouteHandler chain', () => {
   test('void params → zero-param RouteHandler', () => {
-    const ipc = createIpcora().handler('ping', () => 'pong' as const);
-    type Def = typeof ipc.definition;
+    const ipc = ipcora().handler('ping', () => 'pong' as const);
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['ping']>().toEqualTypeOf<
       () => Promise<IpcResult<'pong', BuiltInErrorPayload>>
     >();
@@ -50,17 +50,36 @@ describe('Schema → Handler → RouteHandler chain', () => {
   test('schema params → single-param RouteHandler with inferred param type', () => {
     const nameSchema = schema<{ name: string }>();
 
-    const ipc = createIpcora().handler(
+    const ipc = ipcora().handler(
       'user.create',
       ({ params }) => ({ id: 'u1' as const, name: params.name }),
       { params: nameSchema },
     );
 
     assertType<
-      (params: { name: string }) => Promise<
-        IpcResult<{ readonly id: 'u1'; name: string }, BuiltInErrorPayload>
-      >
-    >(ipc.definition.user.create);
+      (params: {
+        name: string;
+      }) => Promise<IpcResult<{ readonly id: 'u1'; name: string }, BuiltInErrorPayload>>
+    >(ipc.manifest.user.create);
+  });
+
+  test('response schema uses input type for handler and definition', () => {
+    const numericString = schemaIO<string, number>();
+
+    const ipc = ipcora().handler('parseable', () => '42', {
+      response: numericString,
+    });
+
+    expectTypeOf<typeof ipc.manifest.parseable>().toEqualTypeOf<
+      () => Promise<IpcResult<string, BuiltInErrorPayload>>
+    >();
+
+    ipcora().handler(
+      'bad',
+      // @ts-expect-error response handlers return the schema input type, not output type
+      () => 42,
+      { response: numericString },
+    );
   });
 
   test('RouteHandler type alias matches concrete inference', () => {
@@ -87,7 +106,7 @@ describe('Schema → Handler → RouteHandler chain', () => {
 // ===================================================================
 describe('Context extension chain', () => {
   test('state extends TStore', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .state('version', 1 as const)
       .state('flags', { debug: true } as const);
 
@@ -96,7 +115,7 @@ describe('Context extension chain', () => {
   });
 
   test('decorate extends TContext', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .decorate('logger', { prefix: 'app' as const })
       .decorate('db', { url: 'localhost' as const });
 
@@ -109,19 +128,19 @@ describe('Context extension chain', () => {
   });
 
   test('derive extends TContext with returned shape', () => {
-    const ipc = createIpcora().derive(() => ({ rawKind: 'string' as const }));
+    const ipc = ipcora().derive(() => ({ rawKind: 'string' as const }));
     type Ctx = typeof ipc extends Ipcora<infer C> ? C : never;
     expectTypeOf<Ctx>().toEqualTypeOf<{ rawKind: 'string' }>();
   });
 
   test('resolve extends TContext with returned shape', () => {
-    const ipc = createIpcora().resolve(() => ({ doubled: 42 as const }));
+    const ipc = ipcora().resolve(() => ({ doubled: 42 as const }));
     type Ctx = typeof ipc extends Ipcora<infer C> ? C : never;
     expectTypeOf<Ctx>().toEqualTypeOf<{ doubled: 42 }>();
   });
 
   test('chain state → decorate → derive → resolve merges all levels', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .state('count', 0)
       .decorate('env', 'test' as const)
       .derive(() => ({ derived: true as const }))
@@ -140,38 +159,32 @@ describe('Context extension chain', () => {
 // ===================================================================
 describe('Group prefix chain', () => {
   test('flat + group → nested definition tree', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .handler('ping', () => 'pong' as const)
-      .group('api', app =>
-        app.handler('version', () => ({ v: '1.0.0' as const })),
-      );
+      .group('api', app => app.handler('version', () => ({ v: '1.0.0' as const })));
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['ping']>().toEqualTypeOf<
       () => Promise<IpcResult<'pong', BuiltInErrorPayload>>
     >();
-    assertType<
-      () => Promise<IpcResult<{ readonly v: '1.0.0' }, BuiltInErrorPayload>>
-    >(ipc.definition.api.version);
+    assertType<() => Promise<IpcResult<{ readonly v: '1.0.0' }, BuiltInErrorPayload>>>(
+      ipc.manifest.api.version,
+    );
   });
 
   test('nested groups produce deep definition trees', () => {
-    const ipc = createIpcora().group('a', a =>
-      a.group('b', b => b.handler('c', () => 42 as const)),
-    );
+    const ipc = ipcora().group('a', a => a.group('b', b => b.handler('c', () => 42 as const)));
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['a']['b']['c']>().toEqualTypeOf<
       () => Promise<IpcResult<42, BuiltInErrorPayload>>
     >();
   });
 
   test('handler with dotted path inside group creates nested nodes', () => {
-    const ipc = createIpcora().group('admin', admin =>
-      admin.handler('users.list', () => [] as const),
-    );
+    const ipc = ipcora().group('admin', admin => admin.handler('users.list', () => [] as const));
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['admin']['users']['list']>().toEqualTypeOf<
       () => Promise<IpcResult<readonly [], BuiltInErrorPayload>>
     >();
@@ -182,45 +195,76 @@ describe('Group prefix chain', () => {
 // 4.  Event type chain
 // ===================================================================
 describe('Event type chain', () => {
-  test('events() produces typed event definitions on .definition', () => {
-    const ipc = createIpcora().events(
-      defineEventSchema({ update: schema<{ title: string }>() }),
-    );
+  test('events() produces typed event definitions on .manifest', () => {
+    const ipc = ipcora().events(defineEvents({ update: schema<{ title: string }>() }));
 
     // definition has event property
-    expectTypeOf<typeof ipc.definition>().toHaveProperty('onUpdate');
-    expectTypeOf<typeof ipc.definition>().toHaveProperty('onOnceUpdate');
+    expectTypeOf<typeof ipc.manifest>().toHaveProperty('onUpdate');
+    expectTypeOf<typeof ipc.manifest>().toHaveProperty('onOnceUpdate');
 
     // $emit has typed method
     type Emit = typeof ipc.$emit;
     expectTypeOf<Emit>().toHaveProperty('update');
   });
 
-  test('events with path prefix → nested definition', () => {
-    const ipc = createIpcora().events(
-      'user',
-      defineEventSchema({ login: schema<{ token: string }>() }),
+  test('tree events namespace → nested definition', () => {
+    const ipc = ipcora().events(
+      defineEvents({
+        user: {
+          login: schema<{ token: string }>(),
+        },
+      }),
     );
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     // Event is nested under "user"
     expectTypeOf<Def>().toHaveProperty('user');
     expectTypeOf<Def['user']>().toHaveProperty('onLogin');
     expectTypeOf<Def['user']>().toHaveProperty('onOnceLogin');
+
+    assertType<(payload: { token: string }, options?: object) => Promise<void>>(
+      ipc.$emit.user.login,
+    );
+    // @ts-expect-error dotted event names are emitted through nested properties
+    expectTypeOf<(typeof ipc.$emit)['user.login']>();
+  });
+
+  test('defineEvents exposes inferred events on ~definition', () => {
+    const baseEvents = defineEvents({
+      system: {
+        ready: schema<{ at: number }>(),
+      },
+    });
+    const events = defineEvents({
+      extends: [baseEvents],
+      schema: {
+        user: {
+          created: schema<{ id: string }>(),
+        },
+      },
+    });
+
+    type Def = (typeof events)['~definition'];
+
+    expectTypeOf<Def['handlers']>().toEqualTypeOf<{}>();
+    expectTypeOf<Def['events']['system']['onReady']>().toExtend<{
+      readonly payload: { at: number };
+    }>();
+    expectTypeOf<Def['events']['user']['onCreated']>().toExtend<{
+      readonly payload: { id: string };
+    }>();
   });
 
   test('$emit method accepts typed payload', () => {
-    const ipc = createIpcora().events(
-      defineEventSchema({
+    const ipc = ipcora().events(
+      defineEvents({
         rename: schema<{ from: string; to: string }>(),
       }),
     );
 
     // $emit.rename should accept { from: string; to: string }
     type RenameFn = typeof ipc.$emit.rename;
-    assertType<
-      (payload: { from: string; to: string }, options?: object) => Promise<void>
-    >(
+    assertType<(payload: { from: string; to: string }, options?: object) => Promise<void>>(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       0 as never as RenameFn,
     );
@@ -232,7 +276,7 @@ describe('Event type chain', () => {
 // ===================================================================
 describe('Macro type chain', () => {
   test('macro with derive injects context visible to handler', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .macro('withRole', {
         derive({ option }: { option: 'admin' | 'user' }) {
           return { role: option } as const;
@@ -247,14 +291,14 @@ describe('Macro type chain', () => {
         { withRole: 'admin' as const },
       );
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['adminOnly']>().toEqualTypeOf<
       () => Promise<IpcResult<{ isAdmin: boolean }, BuiltInErrorPayload>>
     >();
   });
 
   test('macro factory (function form) resolves option type', () => {
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .macro('role', (role: 'admin' | 'member') => ({
         resolve() {
           return { role } as const;
@@ -269,7 +313,7 @@ describe('Macro type chain', () => {
         { role: 'admin' as const },
       );
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     expectTypeOf<Def['read']>().toEqualTypeOf<
       () => Promise<IpcResult<{ canRead: boolean }, BuiltInErrorPayload>>
     >();
@@ -291,7 +335,7 @@ describe('Error type chain', () => {
       declare readonly code: 42;
     }
 
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .error(MyError, ({ fail, error }) =>
         fail('MY_ERR' as const, { message: error.message, data: undefined }),
       )
@@ -299,26 +343,22 @@ describe('Error type chain', () => {
         throw new MyError('boom');
       });
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     type Result = Awaited<ReturnType<Def['failable']>>;
 
     // MY_ERR should be in the error union
-    type MyPayload = Extract<
-      Extract<Result, { error: unknown }>['error'],
-      { name: 'MY_ERR' }
-    >;
+    type MyPayload = Extract<Extract<Result, { error: unknown }>['error'], { name: 'MY_ERR' }>;
     expectTypeOf<MyPayload['name']>().toEqualTypeOf<'MY_ERR'>();
   });
 
   test('local onError contributes to route error union', () => {
-    const ipc = createIpcora()
-      .handler('safe', () => 'ok' as const, {
-        onError({ fail }) {
-          return fail('LOCAL_ERR' as const, 'local error');
-        },
-      });
+    const ipc = ipcora().handler('safe', () => 'ok' as const, {
+      onError({ fail }) {
+        return fail('LOCAL_ERR' as const, 'local error');
+      },
+    });
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
     type Result = Awaited<ReturnType<Def['safe']>>;
     type ErrorUnion = Extract<Result, { error: unknown }>['error'];
 
@@ -334,12 +374,12 @@ describe('Error type chain', () => {
 // ===================================================================
 describe('Plugin merge chain', () => {
   test('use(plugin) merges routes into definition tree', () => {
-    const plugin = createIpcora().handler('plugin.route', () => 'from-plugin' as const);
-    const app = createIpcora()
+    const plugin = ipcora().handler('plugin.route', () => 'from-plugin' as const);
+    const app = ipcora()
       .handler('app.route', () => 'from-app' as const)
       .use(plugin);
 
-    type Def = typeof app.definition;
+    type Def = typeof app.manifest;
     // Dots in path become nested nodes
     expectTypeOf<Def['app']['route']>().toEqualTypeOf<
       () => Promise<IpcResult<'from-app', BuiltInErrorPayload>>
@@ -350,8 +390,8 @@ describe('Plugin merge chain', () => {
   });
 
   test('use(plugin) merges state', () => {
-    const plugin = createIpcora().state('pluginVersion', 2 as const);
-    const app = createIpcora()
+    const plugin = ipcora().state('pluginVersion', 2 as const);
+    const app = ipcora()
       .state('appName', 'my-app' as const)
       .use(plugin);
 
@@ -359,33 +399,93 @@ describe('Plugin merge chain', () => {
     expectTypeOf<Store>().toEqualTypeOf<{ appName: 'my-app'; pluginVersion: 2 }>();
   });
 
-  test('use(plugin) merges decorators (parent wins on conflict)', () => {
-    const plugin = createIpcora()
+  test('use(plugin) merges decorators (later plugin wins on conflict)', () => {
+    const plugin = ipcora()
       .decorate('env', 'plugin-env' as const)
       .decorate('source', 'plugin' as const);
 
-    const app = createIpcora()
+    const app = ipcora()
       .decorate('env', 'app-env' as const)
       .use(plugin);
 
     type Ctx = typeof app extends Ipcora<infer C> ? C : never;
-    // parent 'env' wins over plugin 'env'; plugin 'source' still present
-    expectTypeOf<'env' extends keyof Ctx ? true : false>().toEqualTypeOf<true>();
-    expectTypeOf<'source' extends keyof Ctx ? true : false>().toEqualTypeOf<true>();
+    expectTypeOf<Ctx>().toEqualTypeOf<{ env: 'plugin-env'; source: 'plugin' }>();
   });
 
   test('use(plugin) merges macros', () => {
-    const plugin = createIpcora().macro('timed', {
-      onBeforeHandle({ path }: { path: string }) {},
-      onAfterHandle({ output }: { output: unknown }) {
-        return output;
+    const plugin = ipcora().macro('timed', {
+      onBeforeHandle({ path: _ }: { path: string }) {},
+      onAfterHandle({ response }: { response: unknown }) {
+        return response;
       },
     });
 
-    const app = createIpcora().use(plugin);
+    const app = ipcora().use(plugin);
 
     type Macros = typeof app extends Ipcora<any, any, infer M> ? M : never;
     expectTypeOf<Macros>().toHaveProperty('timed');
+  });
+
+  test('use(plugin) route conflict uses later plugin type', () => {
+    const plugin = ipcora().handler('shared', () => 'from-plugin' as const);
+    const app = ipcora()
+      .handler('shared', () => 'from-app' as const)
+      .use(plugin);
+
+    type Def = typeof app.manifest;
+    expectTypeOf<Def['shared']>().toEqualTypeOf<
+      () => Promise<IpcResult<'from-plugin', BuiltInErrorPayload>>
+    >();
+  });
+
+  test('handler registered after plugin overrides plugin route type', () => {
+    const plugin = ipcora().handler('shared', () => 'from-plugin' as const);
+    const app = ipcora()
+      .use(plugin)
+      .handler('shared', () => 'from-app' as const);
+
+    type Def = typeof app.manifest;
+    expectTypeOf<Def['shared']>().toEqualTypeOf<
+      () => Promise<IpcResult<'from-app', BuiltInErrorPayload>>
+    >();
+  });
+
+  test('use(plugin) merges state and macros with later plugin conflicts winning', () => {
+    const plugin = ipcora()
+      .state('source', 'plugin' as const)
+      .macro('tag', {
+        derive: () => ({ tag: 'plugin' as const }),
+      });
+
+    const app = ipcora()
+      .state('source', 'app' as const)
+      .macro('tag', {
+        derive: () => ({ tag: 'app' as const }),
+      })
+      .use(plugin);
+
+    type Store = typeof app extends Ipcora<any, infer S> ? S : never;
+    type Macros = typeof app extends Ipcora<any, any, infer M> ? M : never;
+
+    expectTypeOf<Store>().toEqualTypeOf<{ source: 'plugin' }>();
+    expectTypeOf<Macros>().toHaveProperty('tag');
+  });
+
+  test('as(scoped) preserves public type chain', () => {
+    const plugin = ipcora()
+      .decorate('token', 'plugin-token' as const)
+      .handler('auth.me', () => ({ id: 'u1' as const }))
+      .as('scoped');
+
+    const app = ipcora().use(plugin);
+
+    type Ctx = typeof app extends Ipcora<infer C> ? C : never;
+    type Def = typeof app.manifest;
+
+    expectTypeOf<Ctx>().toEqualTypeOf<{ token: 'plugin-token' }>();
+    expectTypeOf<Def['auth']['me']>().toEqualTypeOf<
+      () => Promise<IpcResult<{ id: 'u1' }, BuiltInErrorPayload>>
+    >();
   });
 });
 
@@ -400,9 +500,7 @@ describe('Client type chain', () => {
     type IC = InvokeClient<Def>;
 
     assertType<
-      () => Promise<
-        { data: 'pong'; error: null } | { data: null; error: BuiltInErrorPayload }
-      >
+      () => Promise<{ data: 'pong'; error: null } | { data: null; error: BuiltInErrorPayload }>
     >(0 as never as IC['ping']);
   });
 
@@ -420,9 +518,12 @@ describe('Client type chain', () => {
     expectTypeOf<IC['user']['profile']>().toHaveProperty('get');
   });
 
-  test('Client<T> produces invoke and event branches', () => {
+  test('Client<T> produces invoke and event branches from ~definition shape', () => {
     type Def = {
-      ping: () => Promise<IpcResult<'pong', BuiltInErrorPayload>>;
+      handlers: {
+        ping: () => Promise<IpcResult<'pong', BuiltInErrorPayload>>;
+      };
+      events: {};
     };
     type C = Client<Def>;
     expectTypeOf<C>().toHaveProperty('invoke');
@@ -439,26 +540,22 @@ describe('Full combined roundtrip', () => {
     const nameSchema = schema<{ name: string }>();
     const titleSchema = schema<{ title: string }>();
 
-    const authPlugin = createIpcora()
+    const authPlugin = ipcora()
       .state('authToken', 'secret' as const)
       .handler('auth.status', () => ({ authenticated: true as const }));
 
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .state('appVersion', '1.0.0' as const)
       .decorate('env', 'production' as const)
       .use(authPlugin)
       .handler('ping', () => 'pong' as const)
-      .handler(
-        'user.create',
-        ({ params }) => ({ id: 'u1' as const, name: params.name }),
-        { params: nameSchema },
-      )
-      .group('admin', admin =>
-        admin.handler('dashboard', () => ({ visits: 42 as const })),
-      )
-      .events(defineEventSchema({ update: titleSchema }));
+      .handler('user.create', ({ params }) => ({ id: 'u1' as const, name: params.name }), {
+        params: nameSchema,
+      })
+      .group('admin', admin => admin.handler('dashboard', () => ({ visits: 42 as const })))
+      .events(defineEvents({ update: titleSchema }));
 
-    type Def = typeof ipc.definition;
+    type Def = typeof ipc.manifest;
 
     // Handlers from root
     expectTypeOf<Def['ping']>().toEqualTypeOf<
@@ -467,20 +564,20 @@ describe('Full combined roundtrip', () => {
 
     // Handlers with schema params
     assertType<
-      (params: { name: string }) => Promise<
-        IpcResult<{ readonly id: 'u1'; name: string }, BuiltInErrorPayload>
-      >
-    >(ipc.definition.user.create);
+      (params: {
+        name: string;
+      }) => Promise<IpcResult<{ readonly id: 'u1'; name: string }, BuiltInErrorPayload>>
+    >(ipc.manifest.user.create);
 
     // Handlers from plugin
-    assertType<
-      () => Promise<IpcResult<{ readonly authenticated: true }, BuiltInErrorPayload>>
-    >(ipc.definition.auth.status);
+    assertType<() => Promise<IpcResult<{ readonly authenticated: true }, BuiltInErrorPayload>>>(
+      ipc.manifest.auth.status,
+    );
 
     // Handlers from group
-    assertType<
-      () => Promise<IpcResult<{ readonly visits: 42 }, BuiltInErrorPayload>>
-    >(ipc.definition.admin.dashboard);
+    assertType<() => Promise<IpcResult<{ readonly visits: 42 }, BuiltInErrorPayload>>>(
+      ipc.manifest.admin.dashboard,
+    );
 
     // Event definitions present
     expectTypeOf<Def>().toHaveProperty('onUpdate');
@@ -508,15 +605,11 @@ describe('Full combined roundtrip', () => {
   test('definition → Client<Def> invoke roundtrip', () => {
     const addSchema = schema<{ a: number; b: number }>();
 
-    const ipc = createIpcora()
+    const ipc = ipcora()
       .handler('ping', () => 'pong' as const)
-      .handler(
-        'math.add',
-        ({ params }) => params.a + params.b,
-        { params: addSchema },
-      );
+      .handler('math.add', ({ params }) => params.a + params.b, { params: addSchema });
 
-    type Def = typeof ipc.definition;
+    type Def = (typeof ipc)['~definition'];
     type C = Client<Def>;
 
     // invoke.ping() → Result<'pong'>

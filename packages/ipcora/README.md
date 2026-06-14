@@ -12,9 +12,9 @@ pnpm add ipcora
 
 An `Ipcora` instance is a **router** that owns:
 
-- **Routes** — named handlers (`"user.get"`, `"admin.stats"`) with typed params, output, and errors
-- **Lifecycle hooks** — 12 phases from `onRequest` through `onAfterResponse`
-- **Middleware & Plugins** — `use()` chains that extend execution context, or compose entire routers
+- **Routes** — named handlers (`"user.get"`, `"admin.stats"`) with typed params, response, and errors
+- **Lifecycle hooks** — phases from `onInvoke` through `onTrace`
+- **Plugins** — `use()` composes entire routers
 - **Macros** — reusable hook bundles (e.g. `requireAdmin`)
 - **Bindings** — registered peers (callers) that can invoke routes
 - **Event definitions** — typed push events emitted to bound peers
@@ -24,7 +24,7 @@ The router is **transport-agnostic**: you provide an `IpcAdapter` to wire it int
 ## Quick Start — Memory Adapter
 
 ```ts
-import { createIpcora, fail, type IpcAdapter } from 'ipcora';
+import { ipcora, fail, type IpcAdapter } from 'ipcora';
 
 // A minimal in-memory adapter for testing / local-only use
 const handlers = new Map<string, Function>();
@@ -35,10 +35,10 @@ const adapter: IpcAdapter = {
   removeHandler: ch => handlers.delete(ch),
 };
 
-const ipc = createIpcora({ channel: 'app', adapter }).handler('ping', () => 'pong');
+const ipc = ipcora({ channel: 'app', adapter }).handler('ping', () => 'pong');
 
 // Bind a peer
-ipc.bind({ id: 1, sender: { id: 1 } }, { context: {} });
+ipc.bind({ sender: { id: 1 } });
 
 // Invoke
 const handler = handlers.get('app')!;
@@ -49,7 +49,7 @@ const response = await handler({ sender: { id: 1 } }, { id: 'r1', path: 'ping' }
 ## Creating a Router
 
 ```ts
-createIpcora<TContext, TStore>(options?: IpcoraOptions)
+ipcora<TContext, TStore>(options?: IpcoraOptions)
 ```
 
 ### Options
@@ -69,7 +69,7 @@ createIpcora<TContext, TStore>(options?: IpcoraOptions)
 Register a named handler. The path supports dot notation for nesting.
 
 ```ts
-const ipc = createIpcora<{ tenant: string }>({ channel: 'app', adapter })
+const ipc = ipcora<{ tenant: string }>({ channel: 'app', adapter })
   .handler(
     'user.get',
     ({ params, tenant }) => {
@@ -78,28 +78,33 @@ const ipc = createIpcora<{ tenant: string }>({ channel: 'app', adapter })
     },
     {
       params: userParamsSchema, // Standard Schema V1
-      output: userOutputSchema, // validates return value
+      response: userOutputSchema, // validates return value
+      validateResponse: true, // set false to skip this route's response validation
     },
   )
   .handler('ping', () => 'pong');
 ```
 
+Response validation is enabled by default. Disable it globally with
+`ipcora({ validateResponse: false })`, or per route with
+`{ validateResponse: false }`.
+
 ### Handler Context
 
 The handler receives a merged context object:
 
-| Field       | Type                      | Description                                                                  |
-| ----------- | ------------------------- | ---------------------------------------------------------------------------- |
-| `params`    | schema output             | Validated params (if schema provided)                                        |
-| `rawParams` | `unknown`                 | Raw params before validation                                                 |
-| `peer`      | `IpcPeer`                 | The bound peer that sent the request                                         |
-| `metadata`  | `Record<string, unknown>` | Call metadata                                                                |
-| `signal`    | `AbortSignal`             | Abort controller signal                                                      |
-| `fail`      | `typeof fail`             | Factory for typed errors                                                     |
-| `store`     | `TStore`                  | Shared mutable state                                                         |
-| `id`        | `string`                  | Request ID                                                                   |
-| `path`      | `string`                  | Route path                                                                   |
-| ...context  | `TContext`                | All context extensions (state, decorate, derive, resolve, middleware, guard) |
+| Field       | Type                      | Description                                                      |
+| ----------- | ------------------------- | ---------------------------------------------------------------- |
+| `params`    | schema output             | Validated params (if schema provided)                            |
+| `rawParams` | `unknown`                 | Raw params before validation                                     |
+| `peer`      | `IpcPeer`                 | The bound peer that sent the request                             |
+| `metadata`  | `Record<string, unknown>` | Call metadata                                                    |
+| `signal`    | `AbortSignal`             | Abort controller signal                                          |
+| `fail`      | `typeof fail`             | Factory for typed errors                                         |
+| `store`     | `TStore`                  | Shared mutable state                                             |
+| `id`        | `string`                  | Request ID                                                       |
+| `path`      | `string`                  | Route path                                                       |
+| ...context  | `TContext`                | All context extensions (state, decorate, derive, resolve, guard) |
 
 ### Returning Errors
 
@@ -123,14 +128,14 @@ ipc.group('admin', admin =>
 // Registers: "admin.stats", "admin.config"
 ```
 
-Groups inherit parent hooks, middleware, and macros. You can add group-specific middleware.
+Groups inherit parent hooks and macros. You can add group-specific hooks.
 
 ## Lifecycle Hooks
 
-Every request flows through 12 phases. Phases 1–11 execute in order; `onError` runs instead of `onAfterResponse` when an error occurs. `onAfterResponse` always runs last.
+Every request flows through a fixed lifecycle. `onError` runs when an earlier phase fails, `onAfterResponse` always runs after response creation, and `onTrace` observes the completed invocation.
 
 ```
-onRequest
+onInvoke
   → onTransform
   → derive
   → onGuard
@@ -142,18 +147,19 @@ onRequest
   → onMapResponse
   → (success) onAfterResponse
   → (error)   onError → onAfterResponse
+  → onTrace
 ```
 
 ### Hooks
 
-Hooks can be registered **globally** (`.onRequest(...)`) or **locally** (per `handler()` options).
+Hooks can be registered **globally** (`.onInvoke(...)`) or **locally** (per `handler()` options).
 
-#### `.onRequest(hook)`
+#### `.onInvoke(hook)`
 
 First hook. Inspect the raw request before any processing.
 
 ```ts
-ipc.onRequest(({ id, path, request }) => {
+ipc.onInvoke(({ id, path, request }) => {
   console.log(`[${id}] ${path}`);
 });
 ```
@@ -223,12 +229,12 @@ ipc.onBeforeHandle(({ signal, fail }) => {
 
 #### `.onAfterHandle(hook)`
 
-Transform or inspect the handler's return value. Return a new value to replace the output.
+Transform or inspect the handler's return value. Return a new value to replace the response.
 
 ```ts
-ipc.onAfterHandle(({ output }) => {
-  if (output && typeof output === 'object') {
-    return { ...output, _timestamp: Date.now() };
+ipc.onAfterHandle(({ response }) => {
+  if (response && typeof response === 'object') {
+    return { ...response, _timestamp: Date.now() };
   }
 });
 ```
@@ -279,32 +285,27 @@ ipc.onAfterResponse(({ success, duration, path, phase }) => {
 });
 ```
 
-Receives: `success`, `duration`, `response`, `output`, `params`, `cause`, `phase`.
+Receives: `success`, `duration`, `response`, `response`, `params`, `cause`, `phase`.
 
-## Middleware & Plugins
+## Plugins
 
-`use()` accepts two kinds of arguments:
+`use()` accepts another Ipcora instance and composes it as a plugin.
 
-### Middleware function
+For context extension, use `decorate`, `derive`, `onGuard`, or `resolve`. For completed-call observation and timing, use `onTrace`.
 
 ```ts
-ipc.use<{ logger: Logger }>((ctx, next) => {
-  const start = Date.now();
-  const result = next({ logger: createLogger(ctx.path) });
-  console.log(`${ctx.path} took ${Date.now() - start}ms`);
-  return result;
-});
+ipc
+  .derive(({ path }) => ({ logger: createLogger(path) }))
+  .onTrace(({ path, duration }) => {
+    console.log(`${path} took ${duration}ms`);
+  });
 ```
 
-Middleware context merges with `derive`/`resolve` context and is available to all downstream hooks and the handler.
-
-### Plugin (another Ipcora instance)
-
-You can compose routers by `use()`-ing one Ipcora instance into another. The plugin's routes, middleware, hooks, macros, error mappers, state, and decorators are merged into the parent.
+You can compose routers by `use()`-ing one Ipcora instance into another. The plugin's routes, hooks, macros, error mappers, state, and decorators are merged into the parent.
 
 ```ts
 // Define a reusable auth plugin
-const authPlugin = createIpcora({ name: 'auth' })
+const authPlugin = ipcora({ name: 'auth' })
   .macro('requireAuth', {
     onGuard({ fail }) {
       throw fail('UNAUTHORIZED');
@@ -313,20 +314,31 @@ const authPlugin = createIpcora({ name: 'auth' })
   .handler('auth.login', () => 'token');
 
 // Use it in the main app
-const app = createIpcora({ channel: 'app', adapter })
+const app = ipcora({ channel: 'app', adapter })
   .use(authPlugin)
   .handler('ping', () => 'pong');
 ```
 
-**Singleton behavior:** Named plugins (with a `name`) can only be `use()`d once — calling `use()` with the same named plugin a second time throws. Unnamed plugins can be reused across different parent routers, but using the same unnamed plugin twice in the same parent throws (because route paths would conflict).
+**Deduplication behavior:** Named plugins (with a `name`, plus optional `seed`) are deduplicated per parent router. Reusing the same named plugin in the same parent is a no-op, while different parent routers can reuse it independently. Unnamed plugins are not deduplicated.
 
 **Merge strategy:**
 
-- Routes: merged; duplicate paths throw
-- Hooks: parent hooks run first, plugin hooks run second
-- Middleware: parent middleware wraps plugin middleware (onion model)
-- Macros / error mappers: merged; parent wins on conflict
-- State / decorators: merged; parent wins on conflict
+- Routes: merged; duplicate paths are replaced by the later registration
+- Hooks: parent hooks registered before `use(plugin)` run first, plugin route hooks run second
+- Macros / error mappers / events: merged; later registration wins on conflict
+- State / decorators: merged; later registration wins on conflict
+
+Plugin hooks are local by default: they apply to the plugin's own routes, but not to parent routes registered after `use(plugin)`. Use `.as('scoped')` to export plugin hooks to later parent routes:
+
+```ts
+const authPlugin = ipcora()
+  .derive(() => ({ user: { id: 'u1' } }))
+  .as('scoped');
+
+const app = ipcora()
+  .use(authPlugin)
+  .handler('me', ({ user }) => user);
+```
 
 ## Macros
 
@@ -339,8 +351,8 @@ ipc.macro("requireAdmin", {
   onGuard({ isAdmin, fail }) {
     if (!isAdmin) throw fail("FORBIDDEN", { message: "Admin role required" });
   },
-  onAfterHandle({ output }) {
-    console.log("Admin action:", output);
+  onAfterHandle({ response }) {
+    console.log("Admin action:", response);
   },
 });
 
@@ -394,8 +406,8 @@ A macro can reference another macro. The expansion auto-deduplicates to prevent 
 ```ts
 ipc
   .macro('audited', {
-    onAfterHandle({ output }) {
-      console.log('Audit:', output);
+    onAfterHandle({ response }) {
+      console.log('Audit:', response);
     },
   })
   .macro('secure', {
@@ -420,7 +432,7 @@ A macro definition can include any of these hook keys:
 
 ```ts
 ipc.macro('fullAudit', {
-  onRequest({ id, option }) {
+  onInvoke({ id, option }) {
     /* ... */
   },
   onTransform({ params }) {
@@ -438,8 +450,8 @@ ipc.macro('fullAudit', {
   onBeforeHandle({ option }) {
     /* pre-handler guard */
   },
-  onAfterHandle({ output }) {
-    /* transform output */
+  onAfterHandle({ response }) {
+    /* transform response */
   },
   onMapResponse({ response }) {
     /* rewrite response */
@@ -451,7 +463,7 @@ ipc.macro('fullAudit', {
     /* logging */
   },
   params: mySchema, // appended to route params schemas
-  output: myOutputSchema, // appended to route output schemas
+  response: myOutputSchema, // appended to route response schemas
 });
 ```
 
@@ -460,7 +472,7 @@ All hooks receive the `option` value from the handler options. `derive`, `resolv
 ## State & Decorators
 
 ```ts
-const ipc = createIpcora({ channel: 'app', adapter })
+const ipc = ipcora({ channel: 'app', adapter })
   .state('counter', 0) // mutable, shared across all peers
   .state({ config: { debug: true } }) // batch form
   .decorate('version', '2.0') // static, per-request copy
@@ -475,11 +487,11 @@ ipc.handler('inc', ({ store, version }) => {
 ## Events
 
 ```ts
-import { defineEventSchema } from 'ipcora/event';
+import { defineEvents } from 'ipcora/event';
 import { z } from 'zod'; // or arktype, valibot, etc.
 
-const ipc = createIpcora({ channel: 'app', adapter }).events(
-  defineEventSchema({
+const ipc = ipcora({ channel: 'app', adapter }).events(
+  defineEvents({
     userLogin: z.object({ userId: z.string(), at: z.number() }),
   }),
 );
@@ -496,24 +508,29 @@ ipc.$emit.userLogin({ userId: 'u1', at: Date.now() }, { peers: [peer1, peer2] })
 Install and import from `ipcora/client`:
 
 ```ts
-import { createClient, type InferDefinition } from 'ipcora/client';
+import { ipcoraClient, type InferDefinition } from 'ipcora/client';
 
 type Def = InferDefinition<typeof ipc>;
-const client = createClient<Def>({
-  invoke(call) {
-    // call.channel — dotted path like "user.get"
-    // call.args    — params array
-    // call.metadata — merged metadata
-    return transport.invoke(call.channel, call.args[0], call.metadata);
+const client = ipcoraClient<Def>({
+  adapter: {
+    invoke(call) {
+      // call.channel — dotted path like "user.get"
+      // call.args    — params array
+      // call.metadata — merged metadata
+      return transport.invoke(call.channel, call.args[0], call.metadata);
+    },
+    subscribe(call) {
+      // call.channel  — event channel like "app:event:userLogin"
+      // call.listener — payload callback after event schema output parsing
+      // call.once     — boolean
+      return transport.subscribe(call.channel, call.listener);
+    },
   },
-  subscribe(call) {
-    // call.channel  — event channel like "app:event:userLogin"
-    // call.listener — payload callback
-    // call.once     — boolean
-    return transport.subscribe(call.channel, call.listener);
-  },
+  eventSchema: events, // validates delivered event payloads on the client
   metadata: { appVersion: '1.0' }, // static metadata
-  onMetadata: call => ({ traceId: '...' }), // dynamic per-call metadata
+  hooks: {
+    onInvoke: [call => ({ metadata: { traceId: '...' } })], // dynamic per-call metadata
+  },
 });
 
 // Typed invoke
@@ -529,10 +546,10 @@ const unsub = client.event.onUserLogin(({ userId, at }) => {
 
 | Export                  | Description                                         |
 | ----------------------- | --------------------------------------------------- |
-| `createClient<T>(opts)` | Factory function                                    |
+| `ipcoraClient<T>(opts)` | Factory function                                    |
 | `Client<T>`             | `{ invoke, event }` typed proxy                     |
 | `InferDefinition<T>`    | Extract route & event types from an Ipcora instance |
-| `CreateClientOptions`   | Options type for `createClient`                     |
+| `IpcoraClientOptions`   | Options type for `ipcoraClient`                     |
 | `ClientCall`            | Shape passed to `invoke` adapter                    |
 | `ClientSubscription`    | Shape passed to `subscribe` adapter                 |
 
@@ -544,7 +561,7 @@ Implement the `IpcAdapter` interface to connect to any transport:
 interface IpcAdapter<TEvent extends IpcEvent = IpcEvent> {
   handle(
     channel: string,
-    handler: (event: TEvent, request: IpcRequest) => MaybePromise<IpcResponse>,
+    handler: (event: TEvent, invoke: IpcInvoke) => MaybePromise<IpcResponse>,
   ): void;
   emit(channel: string, sender: TEvent['sender'], payload: unknown): MaybePromise<void>;
   listenerCount(channel: string): number;
@@ -572,7 +589,7 @@ ipc
 Type-only routers for sharing definitions without runtime overhead:
 
 ```ts
-const types = createIpcora({ abstract: true }).handler(
+const types = ipcora({ abstract: true }).handler(
   'user.get',
   (params: string) => ({}) as { id: string },
 );
@@ -585,26 +602,26 @@ const types = createIpcora({ abstract: true }).handler(
 
 ### Main exports (`ipcora`)
 
-| Export         | Kind     | Description                         |
-| -------------- | -------- | ----------------------------------- |
-| `createIpcora` | function | Create a router instance            |
-| `fail`         | function | Create a typed `IpcError`           |
-| `IpcError`     | class    | Typed error class                   |
-| `Ipcora`       | class    | Router class (for type annotations) |
+| Export     | Kind     | Description                         |
+| ---------- | -------- | ----------------------------------- |
+| `ipcora`   | function | Create a router instance            |
+| `fail`     | function | Create a typed `IpcError`           |
+| `IpcError` | class    | Typed error class                   |
+| `Ipcora`   | class    | Router class (for type annotations) |
 
 ### Client exports (`ipcora/client`)
 
 | Export                | Kind     | Description                      |
 | --------------------- | -------- | -------------------------------- |
-| `createClient`        | function | Create a typed Proxy client      |
+| `ipcoraClient`        | function | Create a typed Proxy client      |
 | `Client`              | type     | Client shape `{ invoke, event }` |
 | `InferDefinition`     | type     | Extract type from router         |
-| `CreateClientOptions` | type     | Options for `createClient`       |
+| `IpcoraClientOptions` | type     | Options for `ipcoraClient`       |
 | `ClientMetadata`      | type     | Metadata value type              |
 | `Unsubscribe`         | type     | Cleanup function type            |
 
 ### Event exports (`ipcora/event`)
 
-| Export              | Kind     | Description                             |
-| ------------------- | -------- | --------------------------------------- |
-| `defineEventSchema` | function | Identity helper for typed event schemas |
+| Export         | Kind     | Description                             |
+| -------------- | -------- | --------------------------------------- |
+| `defineEvents` | function | Identity helper for typed event schemas |

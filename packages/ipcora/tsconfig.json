@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "customConditions": ["dev"]
   },
-  "include": ["src", "tests"]
+  "include": ["src"]
 }

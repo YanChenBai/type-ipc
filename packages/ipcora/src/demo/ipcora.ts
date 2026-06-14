@@ -3,15 +3,15 @@
  *
  * Covers every Ipcora feature in a single, readable setup:
  *   state · decorate · derive · resolve
- *   onRequest · onTransform · onGuard · onBeforeHandle
+ *   onInvoke · onTransform · onGuard · onBeforeHandle
  *   onAfterHandle · onMapResponse · onError · onAfterResponse
- *   use (middleware) · macro · error (mapping)
- *   group · events · handler (with params / output schemas)
+ *   onTrace · macro · error (mapping)
+ *   group · events · handler (with params / response schemas)
  *   bind
  */
 
-import { defineEventSchema } from '../event';
-import { createIpcora, fail, type Ipcora } from '../index';
+import { defineEvents } from '../event/index';
+import { ipcora, fail, type Ipcora } from '../index';
 import { createMemoryAdapter, type MemoryAdapter } from './adapter';
 import { ValidationError, DatabaseError } from './errors';
 import {
@@ -24,7 +24,7 @@ import {
 import type { AppContext, AppState } from './types';
 
 export interface AppIpcora {
-  ipc: Ipcora<AppContext, AppState, any, any, any, any>;
+  ipc: Ipcora<AppContext, AppState, any, any, any, any, any, any>;
   invoke: MemoryAdapter['invoke'];
   state: AppState;
   memory: MemoryAdapter;
@@ -40,29 +40,29 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
 
   // ====== Router ===========================================================
 
-  const ipc = createIpcora<AppContext, AppState>({
+  const ipc = ipcora<AppContext, AppState>({
     channel: 'app:ipc',
     adapter: memory.adapter,
     exposeStack: opts?.exposeStack,
   })
-    // ── state: shared mutable data exposed as `store` ──────────────────
+    // state: shared mutable data exposed as `store`
     .state(state)
 
-    // ── decorate: static properties on every lifecycle value ───────────
+    // decorate: static properties on every lifecycle value
     .decorate({ serviceName: 'user-service', version: '1.0.0' })
 
-    // ── derive: runs BEFORE validation (raw request info) ──────────────
+    // derive: runs BEFORE validation (raw request info)
     .derive(({ rawParams, metadata }) => ({
       rawType: typeof rawParams,
       hasMetadata: metadata != null && Object.keys(metadata).length > 0,
     }))
 
-    // ── onRequest: inspect the raw incoming request ────────────────────
-    .onRequest(({ id, path }) => {
-      console.log(`  [onRequest] id=${id} path=${path}`);
+    // onInvoke: inspect the raw incoming request
+    .onInvoke(({ id, path }) => {
+      console.log(`  [onInvoke] id=${id} path=${path}`);
     })
 
-    // ── onTransform: normalize params before validation ────────────────
+    // onTransform: normalize params before validation
     .onTransform(({ params }) => {
       if (params && typeof params === 'object') {
         const p = params as Record<string, unknown>;
@@ -74,13 +74,13 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
       }
     })
 
-    // ── resolve: runs AFTER validation (derived from parsed params) ────
+    // resolve: runs AFTER validation (derived from parsed params)
     .resolve(({ peer, metadata }) => ({
-      requestId: `req-${metadata.traceId ?? 'no-trace'}-${peer.id}`,
+      requestId: `req-${metadata.traceId ?? 'no-trace'}-${peer.sender.id}`,
       locale: 'zh-CN',
     }))
 
-    // ── onGuard: global auth / role resolution ─────────────────────────
+    // onGuard: global auth / role resolution
     .onGuard(({ metadata }) => {
       const user = (metadata as Record<string, unknown>).user as
         | { id: string; role: string }
@@ -91,27 +91,22 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
       };
     })
 
-    // ── use (middleware): timing tracer ────────────────────────────────
-    .use<{ enteredAt: number }>((ctx, next) => {
-      const now = Date.now();
-      console.log(`  [mw:timing] enter path=${ctx.path}`);
-      return next({ enteredAt: now });
+    // derive / resolve: per-call context extensions
+    .derive(() => ({ enteredAt: Date.now() }))
+    .resolve(({ peer, id }) => ({ logPrefix: `[${peer.sender.id}:${id}]` }))
+
+    // onTrace: observe completed calls
+    .onTrace(({ path, duration, success }) => {
+      console.log(`  [trace] path=${path} duration=${duration.toFixed(2)}ms success=${success}`);
     })
 
-    // ── use (middleware): structured logger ────────────────────────────
-    .use<{ logPrefix: string }>((ctx, next) => {
-      const ts = new Date(ctx.startedAt).toISOString();
-      console.log(`  [mw:log] [${ts}] ${ctx.path} — peer ${ctx.peer.id}`);
-      return next({ logPrefix: `[${ctx.peer.id}:${ctx.id}]` });
-    })
-
-    // ── error: map custom Error classes to IpcError payloads ───────────
+    // error: map custom Error classes to IpcError payloads
     .error(ValidationError, ({ fail, error }) =>
       fail('VALIDATION_CUSTOM', { message: error.message }),
     )
     .error(DatabaseError, ({ fail, error }) => fail('DB_UNAVAILABLE', { message: error.message }))
 
-    // ── onError: global error observer / rewriter ──────────────────────
+    // onError: global error observer / rewriter
     .onError(({ name, phase, path }) => {
       console.log(`  [onError] name="${name}" phase="${phase}" path="${path}"`);
       if (name === 'DB_UNAVAILABLE') {
@@ -120,7 +115,7 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
       // Returning undefined lets the default error response through.
     })
 
-    // ── macro: reusable option `requireAdmin` ──────────────────────────
+    // macro: reusable option `requireAdmin`
     .macro('requireAdmin', {
       onGuard({ isAdmin, fail }) {
         if (!isAdmin) {
@@ -129,34 +124,34 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
       },
     })
 
-    // ── onBeforeHandle: shared guard (abort check) ─────────────────────
+    // onBeforeHandle: shared guard (abort check)
     .onBeforeHandle(({ signal }) => {
       if (signal.aborted) throw fail('ABORTED', { message: 'Request aborted' });
     })
 
-    // ── onAfterHandle: wrap outputs with a timestamp ───────────────────
-    .onAfterHandle(({ output }) => {
-      if (output && typeof output === 'object' && !Array.isArray(output)) {
-        return { ...(output as object), _handledAt: Date.now() };
+    // onAfterHandle: wrap responses with a timestamp
+    .onAfterHandle(({ response }) => {
+      if (response && typeof response === 'object' && !Array.isArray(response)) {
+        return { ...(response as object), _handledAt: Date.now() };
       }
     })
 
-    // ── onMapResponse: final response shape transform ──────────────────
+    // onMapResponse: final response shape transform
     .onMapResponse(({ response }) => {
       console.log(`  [onMapResponse] hasError=${!!response.error}`);
       // Could transform the response shape here; leave as-is for the demo.
     })
 
-    // ── onAfterResponse: logging / metrics ─────────────────────────────
+    // onAfterResponse: logging / metrics
     .onAfterResponse(({ success, duration, path }) => {
       if (!success) {
         console.log(`  [onAfterResponse] FAIL path=${path} (${duration.toFixed(1)}ms)`);
       }
     })
 
-    // ── events: typed event definitions ────────────────────────────────
+    // events: typed event definitions
     .events(
-      defineEventSchema({
+      defineEvents({
         userLogin: userLoginEvent,
       }),
     );
@@ -165,9 +160,9 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
 
   ipc.group('admin', admin => {
     return admin
-      .use<{ adminAudit: true }>((ctx, next) => {
-        console.log(`  [admin mw] path=${ctx.path}`);
-        return next({ adminAudit: true });
+      .derive(({ path }) => {
+        console.log(`  [admin derive] path=${path}`);
+        return { adminAudit: true };
       })
 
       .handler(
@@ -200,10 +195,10 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
     },
     {
       params: createUserParams,
-      output: userOutput,
+      response: userOutput,
       requireAdmin: true,
-      onAfterHandle({ output }) {
-        console.log(`  [user.create onAfterHandle] id=${(output as { id: string }).id}`);
+      onAfterHandle({ response }) {
+        console.log(`  [user.create onAfterHandle] id=${(response as { id: string }).id}`);
       },
     },
   );
@@ -221,7 +216,7 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
     },
     {
       params: getUserParams,
-      output: userOutput,
+      response: userOutput,
     },
   );
 
@@ -263,7 +258,7 @@ export function createAppIpcora(opts?: { exposeStack?: boolean }): AppIpcora {
 
   // ====== Bind a peer ======================================================
 
-  ipc.bind({ id: 1, sender: { id: 1 } }, { context: { tenant: 'acme-corp' } });
+  ipc.bind({ sender: { id: 1 } });
 
   return { ipc, invoke: memory.invoke, state, memory };
 }

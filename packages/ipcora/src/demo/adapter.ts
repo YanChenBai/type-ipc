@@ -5,18 +5,22 @@
  * no real IPC needed.
  */
 
-import type { IpcAdapter, IpcEvent, IpcRequest, IpcResponse, MaybePromise } from '../index';
+import type { Promisable } from 'type-fest';
+
+import type { IpcAdapter, IpcEvent, IpcInvoke, IpcResponse } from '../index';
+
+export type { Promisable };
 
 export interface MemoryAdapter {
   adapter: IpcAdapter;
   /** Directly invoke a handler (simulates a peer calling the router). */
-  invoke(channel: string, senderId: number, request: IpcRequest): Promise<IpcResponse>;
+  invoke(channel: string, senderId: number, invoke: IpcInvoke): Promise<IpcResponse>;
 }
 
 export function createMemoryAdapter(): MemoryAdapter {
   const handlers = new Map<
     string,
-    (event: IpcEvent, request: IpcRequest) => MaybePromise<IpcResponse>
+    (event: IpcEvent, invoke: IpcInvoke) => Promisable<IpcResponse>
   >();
 
   const adapter: IpcAdapter = {
@@ -39,7 +43,7 @@ export function createMemoryAdapter(): MemoryAdapter {
   const invoke = async (
     channel: string,
     senderId: number,
-    request: IpcRequest,
+    invoke: IpcInvoke,
   ): Promise<IpcResponse> => {
     const handler = handlers.get(channel);
     if (!handler) {
@@ -50,7 +54,7 @@ export function createMemoryAdapter(): MemoryAdapter {
         },
       };
     }
-    return handler({ sender: { id: senderId } }, request);
+    return handler({ sender: { id: senderId } }, invoke);
   };
 
   return { adapter, invoke };

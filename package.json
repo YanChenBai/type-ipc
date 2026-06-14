@@ -16,7 +16,8 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "^4.1.8",
     "vite-plus": "catalog:"
   },
-  "packageManager": "pnpm@11.5.2"
+  "packageManager": "pnpm@11.6.0"
 }

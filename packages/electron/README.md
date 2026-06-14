@@ -17,9 +17,9 @@ pnpm add @ipcora/electron electron ipcora
 │ Main Process                                            │
 │ ┌─────────────────────────────────────────────────────┐ │
 │ │ @ipcora/electron/main                               │ │
-│ │ createElectronIpcora()                              │ │
+│ │ electronIpcora()                                    │ │
 │ │   .handler("user.get", ({ params }) => ...)         │ │
-│ │ ipc.bind(win)                                       │ │
+│ │ bindWindow(ipc, win)                                │ │
 │ └─────────────────────────────────────────────────────┘ │
 └────────────────────┬────────────────────────────────────┘
                      │ ipcMain.handle / webContents.send
@@ -36,7 +36,7 @@ pnpm add @ipcora/electron electron ipcora
 │ Renderer Process                                        │
 │ ┌─────────────────────────────────────────────────────┐ │
 │ │ @ipcora/electron/renderer                           │ │
-│ │ createIpcoraClient<Def>()                           │ │
+│ │ electronIpcoraClient<Def>()                           │ │
 │ │ client.invoke.user.get({ id: "1" })   // typed!     │ │
 │ └─────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
@@ -55,15 +55,15 @@ pnpm add @ipcora/electron electron ipcora
 
 ## Main Process
 
-### `createElectronIpcora(options?)` → `ElectronIpcora`
+### `electronIpcora(options?)` → `ElectronIpcora`
 
-Create a fully typed ipcora router backed by Electron's `ipcMain`. The Electron channel is fixed internally, and the returned router can bind `BrowserWindow` instances directly.
+Create a fully typed ipcora router backed by Electron's `ipcMain`. The Electron channel is fixed internally.
 
 ```ts
-import { createElectronIpcora } from '@ipcora/electron';
-// or: import { createElectronIpcora } from "@ipcora/electron/main";
+import { electronIpcora } from '@ipcora/electron';
+// or: import { electronIpcora } from "@ipcora/electron/main";
 
-const ipc = createElectronIpcora<{ tenant: string }>()
+const ipc = electronIpcora<{ tenant: string }>()
   .state('users', new Map())
   .handler('ping', () => 'pong')
   .handler('user.get', ({ params, store }) => {
@@ -71,20 +71,19 @@ const ipc = createElectronIpcora<{ tenant: string }>()
   });
 ```
 
-### `ipc.bind(window, options?)` → `BoundBrowserWindow`
+### `bindWindow(ipc, window)` → `BoundBrowserWindow`
 
 Bind a `BrowserWindow` as a callable peer. Returns a per-window handle with `emit`, `$emit`, and `unbind`.
 
 ```ts
 import { BrowserWindow } from 'electron';
+import { bindWindow } from '@ipcora/electron';
 
 const win = new BrowserWindow({
   /* ... */
 });
 
-const binding = ipc.bind(win, {
-  context: { tenant: 'acme-corp' }, // merged into handler context
-});
+const binding = bindWindow(ipc, win);
 
 // binding.emit(...) sends typed events to this window.
 binding.unbind();
@@ -95,28 +94,28 @@ binding.unbind();
 
 `context` is optional. Use it when handlers need per-window values such as tenant, authenticated user, role, or session state.
 
-### `createElectronAdapter(ipcMain)` → `ElectronIpcAdapter`
+### `electronIpcAdapter()` → `ElectronIpcAdapter`
 
 Low-level adapter factory. Use if you need the raw adapter without creating a full ipcora instance.
 
 ```ts
-import { createElectronAdapter } from '@ipcora/electron';
+import { electronIpcAdapter } from '@ipcora/electron';
 
-const adapter = createElectronAdapter(ipcMain);
+const adapter = electronIpcAdapter();
 adapter.handle('my-channel', (event, request) => {
   // event.sender is WebContents
   return { data: 'ok' };
 });
 ```
 
-### `createBrowserWindowPeer(window)` → `ElectronIpcPeer`
+### `electronBrowserWindowPeer(window)` → `ElectronIpcPeer`
 
 Wrap a `BrowserWindow` as an `IpcPeer` without binding. Useful for advanced peer management.
 
 ```ts
-import { createBrowserWindowPeer } from '@ipcora/electron';
+import { electronBrowserWindowPeer } from '@ipcora/electron';
 
-const peer = createBrowserWindowPeer(myWindow);
+const peer = electronBrowserWindowPeer(myWindow);
 peer.id; // BrowserWindow.id
 peer.sender; // webContents (used for emit/send)
 peer.window; // BrowserWindow reference
@@ -154,7 +153,7 @@ exposeIpcoraBridge();
 After this call, `window.__IPCORA__` exposes:
 
 ```ts
-window.__IPCORA__.invoke(request: IpcRequest): Promise<IpcResponse>
+window.__IPCORA__.invoke(request: IpcInvoke): Promise<IpcResponse>
 window.__IPCORA__.subscribe(eventChannel: string, listener: (payload: unknown) => void): () => void
 ```
 
@@ -168,18 +167,20 @@ import type { IpcoraBridge } from '@ipcora/electron/preload';
 
 ## Renderer Process
 
-### `createIpcoraClient(options?)` → `Client`
+### `electronIpcoraClient(options?)` → `Client`
 
 Create a fully typed Proxy client backed by the preload bridge.
 
 ```ts
 // renderer.ts
-import { createIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
+import { electronIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
 import type { AppIpcora } from '../main/ipc'; // type-only import — zero runtime cost
 
-const client = createIpcoraClient<InferDefinition<AppIpcora>>({
+const client = electronIpcoraClient<InferDefinition<AppIpcora>>({
   metadata: { appVersion: '1.0' }, // static metadata
-  onMetadata: call => ({ traceId: '...' }), // dynamic per-call metadata
+  hooks: {
+    onInvoke: [call => ({ metadata: { traceId: '...' } })], // dynamic per-call metadata
+  },
 });
 
 // Typed invoke
@@ -198,19 +199,20 @@ const unsub = client.event.onUserLogin(({ userId, at }) => {
 
 ### Options
 
-| Option       | Type                                | Default | Description                            |
-| ------------ | ----------------------------------- | ------- | -------------------------------------- |
-| `metadata`   | `Record<string, unknown>`           | —       | Static metadata merged into every call |
-| `onMetadata` | `(call) => Record<string, unknown>` | —       | Dynamic per-call metadata hook         |
+| Option             | Type                      | Default | Description                            |
+| ------------------ | ------------------------- | ------- | -------------------------------------- |
+| `metadata`         | `Record<string, unknown>` | —       | Static metadata merged into every call |
+| `hooks.onInvoke`   | `ClientInvokeHook[]`      | —       | Dynamic per-call invoke hook           |
+| `throwInvokeError` | `boolean`                 | `false` | Throw `IpcError` for invoke errors     |
 
 ### Renderer Types
 
 ```ts
 import type {
-  CreateIpcoraClientOptions,
+  ElectronIpcoraClientOptions,
   InferDefinition,
   Client,
-  CreateClientOptions,
+  IpcoraClientOptions,
 } from '@ipcora/electron/renderer';
 ```
 
@@ -221,9 +223,9 @@ import type {
 ### `src/main/ipc.ts` (main process — shared types)
 
 ```ts
-import { createElectronIpcora, fail } from '@ipcora/electron';
+import { electronIpcora, fail } from '@ipcora/electron';
 
-export const ipc = createElectronIpcora<{ tenant: string }, { users: Map<string, User> }>()
+export const ipc = electronIpcora<{ tenant: string }, { users: Map<string, User> }>()
   .state('users', new Map<string, User>())
   .handler('user.create', ({ params, store }) => {
     const user = { id: crypto.randomUUID(), ...params };
@@ -243,13 +245,14 @@ export type AppIpcora = typeof ipc;
 
 ```ts
 import { BrowserWindow } from 'electron';
+import { bindWindow } from '@ipcora/electron/main';
 import { ipc } from './ipc';
 
 function createWindow() {
   const win = new BrowserWindow({
     webPreferences: { preload: path.join(__dirname, '../preload/index.js') },
   });
-  ipc.bind(win, { context: { tenant: 'default' } });
+  bindWindow(ipc, win);
   return win;
 }
 ```
@@ -264,10 +267,10 @@ exposeIpcoraBridge();
 ### `src/renderer/app.ts` (renderer)
 
 ```ts
-import { createIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
+import { electronIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
 import type { AppIpcora } from '../main/ipc';
 
-const client = createIpcoraClient<InferDefinition<AppIpcora>>();
+const client = electronIpcoraClient<InferDefinition<AppIpcora>>();
 
 // Create a user
 const newUser = await client.invoke.user.create({ name: 'Alice', email: 'alice@acme.com' });
@@ -290,17 +293,17 @@ if (result.error) {
 
 ### Electron-Specific Types
 
-| Type                        | Shape                                                             |
-| --------------------------- | ----------------------------------------------------------------- |
-| `ElectronIpcEvent`          | `IpcMainInvokeEvent & IpcEvent<WebContents>`                      |
-| `ElectronIpcMain`           | `Pick<IpcMain, "handle" \| "listenerCount" \| "removeHandler">`   |
-| `ElectronIpcAdapter`        | `IpcAdapter<ElectronIpcEvent>`                                    |
-| `ElectronIpcora`            | `Ipcora` with `bind(window, options?)`                            |
-| `ElectronIpcoraOptions`     | `IpcoraOptions` without `adapter` or `channel`                    |
-| `ElectronIpcPeer`           | `IpcPeer<WebContents> & { window: BrowserWindow }`                |
-| `BoundBrowserWindow`        | `{ id, window, emit, $emit, unbind }`                             |
-| `IpcoraBridge`              | `{ invoke, subscribe }` — exposed to renderer via `contextBridge` |
-| `CreateIpcoraClientOptions` | `{ metadata?, onMetadata? }`                                      |
+| Type                          | Shape                                                             |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `ElectronIpcEvent`            | `IpcMainInvokeEvent & IpcEvent<WebContents>`                      |
+| `ElectronIpcMain`             | `Pick<IpcMain, "handle" \| "listenerCount" \| "removeHandler">`   |
+| `ElectronIpcAdapter`          | `IpcAdapter<ElectronIpcEvent>`                                    |
+| `ElectronIpcora`              | `Ipcora` backed by Electron's fixed IPC channel                   |
+| `ElectronIpcoraOptions`       | `IpcoraOptions` without `adapter` or `channel`                    |
+| `ElectronIpcPeer`             | `IpcPeer<WebContents> & { window: BrowserWindow }`                |
+| `BoundBrowserWindow`          | `{ id, window, emit, $emit, unbind }`                             |
+| `IpcoraBridge`                | `{ invoke, subscribe }` — exposed to renderer via `contextBridge` |
+| `ElectronIpcoraClientOptions` | `{ metadata?, hooks?, eventSchema?, throwInvokeError? }`          |
 
 ### How Events Work
 

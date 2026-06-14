@@ -1,0 +1,29 @@
+{
+  "name": "@ipcora/electron-example",
+  "version": "0.0.0",
+  "description": "A starter for creating a TypeScript package.",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vp pack && run-p dev:web dev:electron",
+    "dev:web": "vp dev",
+    "dev:electron": "electron ./dist/main.mjs"
+  },
+  "dependencies": {
+    "electron": "catalog:",
+    "npm-run-all2": "^9.0.1"
+  },
+  "devDependencies": {
+    "@ipcora/electron": "workspace:*",
+    "@types/node": "^25.6.2",
+    "@typescript/native-preview": "7.0.0-dev.20260509.2",
+    "arktype": "catalog:",
+    "ipcora": "workspace:*",
+    "typescript": "^6.0.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

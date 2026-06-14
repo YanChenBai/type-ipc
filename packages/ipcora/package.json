@@ -25,13 +25,18 @@
     },
     "./client": {
       "types": "./dist/client.d.mts",
-      "dev": "./src/client.ts",
+      "dev": "./src/client/index.ts",
       "default": "./dist/client.mjs"
     },
     "./event": {
       "types": "./dist/event.d.mts",
-      "dev": "./src/event.ts",
+      "dev": "./src/event/index.ts",
       "default": "./dist/event.mjs"
+    },
+    "./test": {
+      "types": "./dist/test.d.mts",
+      "dev": "./src/host/test.ts",
+      "default": "./dist/test.mjs"
     },
     "./package.json": "./package.json"
   },
@@ -40,6 +45,7 @@
       ".": "./dist/index.mjs",
       "./client": "./dist/client.mjs",
       "./event": "./dist/event.mjs",
+      "./test": "./dist/test.mjs",
       "./package.json": "./package.json"
     },
     "access": "public"
@@ -53,7 +59,8 @@
     "prepublishOnly": "vp run build"
   },
   "dependencies": {
-    "@standard-schema/spec": "catalog:"
+    "@standard-schema/spec": "catalog:",
+    "type-fest": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -21,11 +21,11 @@ pnpm add @ipcora/electron electron
 ### Core — memory adapter
 
 ```ts
-import { createIpcora, fail } from 'ipcora';
-import { createClient, type InferDefinition } from 'ipcora/client';
+import { ipcora, fail } from 'ipcora';
+import { ipcoraClient, type InferDefinition } from 'ipcora/client';
 
 // 1. Define a router
-const ipc = createIpcora<{ tenant: string }>({
+const ipc = ipcora<{ tenant: string }>({
   channel: 'app:ipc',
   adapter: memoryAdapter,
 })
@@ -37,11 +37,11 @@ const ipc = createIpcora<{ tenant: string }>({
   });
 
 // 2. Bind a peer
-ipc.bind({ id: 1, sender: { id: 1 } }, { context: { tenant: 'acme' } });
+ipc.bind({ sender: { id: 1 } });
 
 // 3. Create a typed client
 type Def = InferDefinition<typeof ipc>;
-const client = createClient<Def>({ invoke });
+const client = ipcoraClient<Def>({ invoke });
 const result = await client.invoke.user.get({ id: '1' });
 //    ^ { data: { name: string } | null; error: { name: string; message: string } | null }
 ```
@@ -51,9 +51,9 @@ const result = await client.invoke.user.get({ id: '1' });
 **main process** (`src/main/ipc.ts`) — register handlers & export types:
 
 ```ts
-import { createElectronIpcora } from '@ipcora/electron';
+import { electronIpcora } from '@ipcora/electron';
 
-export const ipc = createElectronIpcora().handler('ping', () => 'pong');
+export const ipc = electronIpcora().handler('ping', () => 'pong');
 
 export type AppIpcora = typeof ipc;
 ```
@@ -62,12 +62,13 @@ export type AppIpcora = typeof ipc;
 
 ```ts
 import { BrowserWindow } from 'electron';
+import { bindWindow } from '@ipcora/electron/main';
 import { ipc } from './ipc';
 
 const win = new BrowserWindow({
   webPreferences: { preload: path.join(__dirname, '../preload/index.js') },
 });
-const binding = ipc.bind(win);
+const binding = bindWindow(ipc, win);
 // binding.emit(...) sends typed events to this window.
 ```
 
@@ -81,10 +82,10 @@ exposeIpcoraBridge();
 **renderer** — call handlers with full type safety:
 
 ```ts
-import { createIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
+import { electronIpcoraClient, type InferDefinition } from '@ipcora/electron/renderer';
 import type { AppIpcora } from '../main/ipc';
 
-const client = createIpcoraClient<InferDefinition<AppIpcora>>();
+const client = electronIpcoraClient<InferDefinition<AppIpcora>>();
 const result = await client.invoke.ping();
 //    ^ { data: "pong"; error: null }
 ```

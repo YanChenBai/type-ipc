@@ -1,8 +1,8 @@
 export {
-  createElectronAdapter,
-  createElectronIpcora,
-  createBrowserWindowPeer,
-  bindBrowserWindow,
+  electronIpcAdapter,
+  electronIpcora,
+  electronBrowserWindowPeer,
+  bindWindow,
   ELECTRON_IPCORA_CHANNEL,
 } from './main';
 export type {
@@ -12,6 +12,5 @@ export type {
   ElectronIpcora,
   ElectronIpcoraOptions,
   ElectronIpcPeer,
-  BindBrowserWindowOptions,
   BoundBrowserWindow,
 } from './main';

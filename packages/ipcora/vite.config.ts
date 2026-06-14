@@ -5,8 +5,9 @@ export default defineConfig({
     {
       entry: {
         index: './src/index.ts',
-        client: './src/client.ts',
-        event: './src/event.ts',
+        client: './src/client/index.ts',
+        event: './src/event/index.ts',
+        test: './src/host/test.ts',
       },
       platform: 'node',
       format: 'esm',
@@ -17,7 +18,7 @@ export default defineConfig({
     typecheck: {
       enabled: true,
     },
-    include: ['./tests/**/*.test.ts', './tests/**/*.test-d.ts'],
+    include: ['./src/**/__tests__/**/*.test.ts', './src/**/__tests__/**/*.test-d.ts'],
   },
   lint: {
     options: {

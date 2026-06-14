@@ -1,18 +1,31 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BaseWindow, BrowserWindow, ipcMain } from 'electron';
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron';
-import { createIpcora } from 'ipcora';
+import { Ipcora as IpcoraBase } from 'ipcora';
 import type {
   AnyIpcora,
+  AnySchema,
+  DefinedEvents,
+  DefinedEventsDefinition,
   EventEmitter,
   EventNames,
   EventPayloadByName,
-  ExtractEvents,
+  HandlerFunction,
+  HandlerOptions,
+  InferSchemaInput,
+  InferSchemaOutput,
+  IpcAdapter,
   IpcEvent,
   Ipcora,
-  IpcAdapter,
   IpcoraOptions,
   IpcPeer,
-  IpcRequest,
+  IpcInvoke,
+  JoinPathType,
+  MacroDefinition,
+  MacroRegistry,
+  Merge,
+  OnErrorHookPayload,
+  PathToObject,
+  RouteHandler,
 } from 'ipcora';
 
 import { ELECTRON_IPCORA_CHANNEL } from './constants';
@@ -28,41 +41,175 @@ export type ElectronIpcAdapter = IpcAdapter<ElectronIpcEvent>;
 export type ElectronIpcoraOptions = Omit<IpcoraOptions, 'adapter' | 'channel'>;
 
 export type ElectronIpcPeer = IpcPeer<WebContents> & {
-  window: BrowserWindow;
+  window: BaseWindow;
 };
 
-export type BindBrowserWindowOptions<TContext extends object> = {
-  context?: Partial<TContext>;
+export type ElectronBrowserWindowMacro = MacroDefinition<any, any, boolean | undefined> & {
+  resolve: (value: { sender: unknown; peer: IpcPeer; option: boolean | undefined }) => {
+    browserWindow: BrowserWindow;
+  };
 };
 
-export interface BoundBrowserWindow<TRoutes extends object = {}> {
-  id: number;
-  window: BrowserWindow;
-  unbind: () => void;
-  emit: <const TName extends EventNames<ExtractEvents<TRoutes>> & string>(
-    name: TName,
-    payload: EventPayloadByName<ExtractEvents<TRoutes>, TName>,
-  ) => Promise<void>;
-  $emit: EventEmitter<ExtractEvents<TRoutes>>;
+export type ElectronBaseWindowMacro = MacroDefinition<any, any, boolean | undefined> & {
+  resolve: (value: { peer: IpcPeer; option: boolean | undefined }) => {
+    baseWindow: BaseWindow;
+  };
+};
+
+type Expand<T> = { [K in keyof T]: T[K] } & {};
+
+type ElectronMacroRegistry = {
+  browserWindow: ElectronBrowserWindowMacro;
+  baseWindow: ElectronBaseWindowMacro;
+};
+
+type ElectronHandlerContext<TContext extends object, TOptions extends object> = Expand<
+  TContext &
+    ('browserWindow' extends keyof TOptions ? { browserWindow: BrowserWindow } : {}) &
+    ('baseWindow' extends keyof TOptions ? { baseWindow: BaseWindow } : {})
+>;
+
+type RoutesOf<TIpcora> =
+  TIpcora extends ElectronIpcora<any, any, any, infer TRoutes, any, any, any, any> ? TRoutes : {};
+
+type EventsOf<TIpcora> =
+  TIpcora extends ElectronIpcora<any, any, any, any, any, any, infer TEvents, any> ? TEvents : {};
+
+type HandlersOf<TIpcora> =
+  TIpcora extends ElectronIpcora<any, any, any, any, any, any, any, infer THandlers>
+    ? THandlers
+    : {};
+
+type EventsOfBindable<TIpcora> =
+  TIpcora extends ElectronIpcora<any, any, any, any, any, any, infer TEvents, any>
+    ? TEvents
+    : TIpcora extends Ipcora<any, any, any, any, any, any, infer TEvents, any>
+      ? TEvents
+      : {};
+
+interface BindableIpcora {
+  bind(...peers: IpcPeer[]): () => void;
+  emit(
+    name: string,
+    payload: unknown,
+    options?: { peers?: Iterable<IpcPeer | number> },
+  ): Promise<void>;
 }
 
-export type ElectronIpcora<TContext extends object = {}, TStore extends object = {}> = Ipcora<
-  TContext,
-  TStore
+export interface BoundBrowserWindow<TEvents extends object = {}> {
+  id: number;
+  window: BaseWindow;
+  unbind: () => void;
+  emit: <const TName extends EventNames<TEvents> & string>(
+    name: TName,
+    payload: EventPayloadByName<TEvents, TName>,
+  ) => Promise<void>;
+  $emit: EventEmitter<TEvents>;
+}
+
+export type ElectronIpcora<
+  TContext extends object = {},
+  TStore extends object = {},
+  TMacros extends MacroRegistry = ElectronMacroRegistry,
+  TRoutes extends object = {},
+  TPrefix extends string = '',
+  TErrors = never,
+  TEvents extends object = {},
+  THandlers extends object = {},
+> = Omit<
+  Ipcora<TContext, TStore, TMacros, TRoutes, TPrefix, TErrors, TEvents, THandlers>,
+  'handler' | 'group' | 'events'
 > & {
-  bind(window: BrowserWindow, options?: BindBrowserWindowOptions<TContext>): BoundBrowserWindow;
-  bind(peer: IpcPeer, options?: BindBrowserWindowOptions<TContext>): () => void;
+  handler<
+    const TPath extends string,
+    TParamsSchema extends AnySchema | undefined = undefined,
+    TResponseSchema extends AnySchema | undefined = undefined,
+    TMetadataSchema extends AnySchema | undefined = undefined,
+    TOptions extends object = {},
+    TRouteContext extends object = ElectronHandlerContext<TContext, TOptions>,
+    TParams = TParamsSchema extends AnySchema ? InferSchemaOutput<TParamsSchema> : void,
+    TResponse = TResponseSchema extends AnySchema ? InferSchemaInput<TResponseSchema> : any,
+    THandler extends HandlerFunction<TParams, TResponse, TRouteContext, TStore, TEvents> =
+      HandlerFunction<TParams, TResponse, TRouteContext, TStore, TEvents>,
+    TRouteResponse = TResponseSchema extends AnySchema ? TResponse : Awaited<ReturnType<THandler>>,
+    TLocalErrors = TOptions extends { onError?: infer THook } ? OnErrorHookPayload<THook> : never,
+  >(
+    path: TPath,
+    handler: THandler,
+    options?: HandlerOptions<
+      TParamsSchema,
+      TResponseSchema,
+      TMetadataSchema,
+      TRouteContext,
+      TStore,
+      TMacros
+    > &
+      TOptions,
+  ): ElectronIpcora<
+    TContext,
+    TStore,
+    TMacros,
+    Merge<
+      TRoutes,
+      PathToObject<
+        JoinPathType<TPrefix, TPath>,
+        RouteHandler<TParams, TRouteResponse, TErrors | TLocalErrors>
+      >
+    >,
+    TPrefix,
+    TErrors,
+    TEvents,
+    Merge<
+      THandlers,
+      PathToObject<
+        JoinPathType<TPrefix, TPath>,
+        RouteHandler<TParams, TRouteResponse, TErrors | TLocalErrors>
+      >
+    >
+  >;
+  group<const TPath extends string, TGroupIpcora>(
+    prefix: TPath,
+    configure: (
+      ipc: ElectronIpcora<
+        TContext,
+        TStore,
+        TMacros,
+        TRoutes,
+        JoinPathType<TPrefix, TPath>,
+        TErrors,
+        TEvents,
+        THandlers
+      >,
+    ) => TGroupIpcora,
+  ): ElectronIpcora<
+    TContext,
+    TStore,
+    TMacros,
+    Merge<TRoutes, RoutesOf<TGroupIpcora>>,
+    TPrefix,
+    TErrors,
+    Merge<TEvents, EventsOf<TGroupIpcora>>,
+    Merge<THandlers, HandlersOf<TGroupIpcora>>
+  >;
+  events<const TEventMap extends DefinedEvents<any, any>>(
+    schema: TEventMap,
+  ): ElectronIpcora<
+    TContext,
+    TStore,
+    TMacros,
+    Merge<TRoutes, DefinedEventsDefinition<TEventMap>>,
+    TPrefix,
+    TErrors,
+    Merge<TEvents, DefinedEventsDefinition<TEventMap>>,
+    THandlers
+  >;
 };
 
-export function createElectronAdapter(ipcMain: ElectronIpcMain): ElectronIpcAdapter {
+export function electronIpcAdapter(): ElectronIpcAdapter {
   return {
     handle(channel, handler) {
-      ipcMain.handle(channel, (event, request) => {
-        const windowId = BrowserWindow?.fromWebContents?.(event.sender)?.id ?? event.sender.id;
-        const sender = Object.create(event.sender) as WebContents;
-        Object.defineProperty(sender, 'id', { value: windowId });
-
-        return handler({ ...event, sender } as ElectronIpcEvent, request as IpcRequest);
+      ipcMain.handle(channel, (event, invoke) => {
+        return handler(event as ElectronIpcEvent, invoke as IpcInvoke);
       });
     },
     emit(channel, sender, payload) {
@@ -77,22 +224,31 @@ export function createElectronAdapter(ipcMain: ElectronIpcMain): ElectronIpcAdap
   };
 }
 
-export function createElectronIpcora<TContext extends object = {}, TStore extends object = {}>(
+export function electronIpcora<TContext extends object = {}, TStore extends object = {}>(
   options: ElectronIpcoraOptions = {},
 ): ElectronIpcora<TContext, TStore> {
-  const ipcora = createIpcora<TContext, TStore>({
+  return new IpcoraBase<TContext, TStore>({
     ...options,
     channel: ELECTRON_IPCORA_CHANNEL,
-    adapter: createElectronAdapter(ipcMain),
-  }) as ElectronIpcora<TContext, TStore>;
-
-  return attachBrowserWindowBinder(ipcora);
+    adapter: electronIpcAdapter(),
+  })
+    .macro('browserWindow', {
+      resolve: ({ sender, peer }) => ({
+        browserWindow:
+          BrowserWindow.fromWebContents(sender as unknown as WebContents) ??
+          ((peer as unknown as ElectronIpcPeer).window as BrowserWindow),
+      }),
+    } satisfies ElectronBrowserWindowMacro)
+    .macro('baseWindow', {
+      resolve: ({ peer }) => ({
+        baseWindow: (peer as unknown as ElectronIpcPeer).window,
+      }),
+    } satisfies ElectronBaseWindowMacro) as ElectronIpcora<TContext, TStore>;
 }
 
-export function createBrowserWindowPeer(window: BrowserWindow): ElectronIpcPeer {
+export function electronBrowserWindowPeer(window: BaseWindow): ElectronIpcPeer {
   return {
-    id: window.id,
-    sender: window.webContents,
+    sender: (window as BrowserWindow).webContents,
     window,
     onDispose(dispose) {
       window.once('closed', dispose);
@@ -100,60 +256,37 @@ export function createBrowserWindowPeer(window: BrowserWindow): ElectronIpcPeer 
   };
 }
 
-export function bindBrowserWindow<
-  TContext extends object,
-  TStore extends object,
-  TRoutes extends object,
->(
-  ipcora: Ipcora<TContext, TStore, any, TRoutes, any, any>,
-  window: BrowserWindow,
-  options: BindBrowserWindowOptions<TContext> = {},
-): BoundBrowserWindow<TRoutes> {
-  const peer = createBrowserWindowPeer(window);
-  const unbind = ipcora.bind(peer, { context: options.context ?? {} });
+export function bindWindow<TIpcora>(
+  ipcora: TIpcora,
+  window: BaseWindow,
+): BoundBrowserWindow<EventsOfBindable<TIpcora>> {
+  const peer = electronBrowserWindowPeer(window);
+  const bindable = ipcora as unknown as BindableIpcora;
+  const unbind = bindable.bind(peer);
 
   return {
-    id: peer.id,
+    id: peer.sender.id,
     window,
     unbind,
     emit(name, payload) {
-      return ipcora.emit(name as never, payload as never, { peers: [peer.id] });
+      return bindable.emit(name as never, payload as never, { peers: [peer.sender.id] });
     },
-    $emit: createBoundEventEmitter(ipcora, peer.id) as EventEmitter<any>,
+    $emit: createBoundEventEmitter(ipcora as unknown as AnyIpcora, peer.sender.id) as EventEmitter<
+      EventsOfBindable<TIpcora>
+    >,
   };
 }
 
-function attachBrowserWindowBinder<TContext extends object, TStore extends object>(
-  ipcora: ElectronIpcora<TContext, TStore>,
-): ElectronIpcora<TContext, TStore> {
-  const bindPeer = ipcora.bind.bind(ipcora);
+function createBoundEventEmitter(ipcora: AnyIpcora, peerId: number, path = ''): EventEmitter<any> {
+  const emit = (payload: unknown) => ipcora.emit(path, payload, { peers: [peerId] });
 
-  Object.defineProperty(ipcora, 'bind', {
-    configurable: true,
-    value(target: BrowserWindow | IpcPeer, options: BindBrowserWindowOptions<TContext> = {}) {
-      if (isBrowserWindow(target)) {
-        return bindBrowserWindow(ipcora, target, options);
-      }
-
-      return bindPeer(target, options);
-    },
-  });
-
-  return ipcora;
-}
-
-function isBrowserWindow(value: BrowserWindow | IpcPeer): value is BrowserWindow {
-  return typeof (value as BrowserWindow).webContents?.send === 'function';
-}
-
-function createBoundEventEmitter(ipcora: AnyIpcora, peerId: number): EventEmitter<any> {
-  return new Proxy(Object.create(null), {
+  return new Proxy(emit, {
     get(_target, property) {
       if (property === 'then') return undefined;
       if (property === Symbol.toStringTag) return 'IpcoraBoundEventEmitter';
-      if (typeof property !== 'string') return undefined;
+      if (typeof property !== 'string' || property.includes('.')) return undefined;
 
-      return (payload: unknown) => ipcora.emit(property, payload, { peers: [peerId] });
+      return createBoundEventEmitter(ipcora, peerId, path ? `${path}.${property}` : property);
     },
   }) as EventEmitter<any>;
 }
